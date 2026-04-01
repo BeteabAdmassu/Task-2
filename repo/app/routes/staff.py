@@ -3,7 +3,7 @@ from flask_login import current_user, login_required
 from app.extensions import db
 from app.models.user import User
 from app.models.demographics import PatientDemographics, DemographicsChangeLog
-from app.utils.encryption import encrypt_value, decrypt_value, mask_id
+from app.utils.encryption import encrypt_value, decrypt_value, mask_id, mask_encrypted_id
 from app.utils.auth import role_required
 from app.utils.antireplay import antireplay
 from app.routes.patient import _parse_demographics_form, _save_demographics, PLAIN_FIELDS
@@ -21,6 +21,7 @@ def patient_list():
 
 @staff_bp.route("/patients/<int:patient_id>/demographics", methods=["GET", "POST"])
 @role_required("administrator", "clinician", "front_desk")
+@antireplay
 def patient_demographics(patient_id):
     patient = db.session.get(User, patient_id)
     if not patient or patient.role != "patient":
@@ -47,7 +48,7 @@ def patient_demographics(patient_id):
             return render_template(
                 "staff/patient_demographics.html",
                 patient=patient, demo=demo, data=data, mask_id=mask_id,
-                read_only=read_only,
+                mask_encrypted_id=mask_encrypted_id, read_only=read_only,
             )
 
         if not demo:
@@ -69,7 +70,8 @@ def patient_demographics(patient_id):
 
     return render_template(
         "staff/patient_demographics.html",
-        patient=patient, demo=demo, mask_id=mask_id, read_only=read_only,
+        patient=patient, demo=demo, mask_id=mask_id,
+        mask_encrypted_id=mask_encrypted_id, read_only=read_only,
     )
 
 

@@ -6,7 +6,7 @@ import ssl
 from app import create_app
 from app.utils.certs import generate_self_signed_cert
 
-app = create_app(os.environ.get("FLASK_ENV", "development"))
+app = create_app(os.environ.get("FLASK_ENV", "production"))
 
 if __name__ == "__main__":
     cert_dir = os.path.join(os.path.dirname(__file__), "certs")

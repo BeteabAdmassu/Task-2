@@ -22,12 +22,14 @@
     <div class="form-group"><label>Phone</label><p>{{ demo.phone }}</p></div>
     <div class="form-group"><label>Address</label><p>{{ demo.address_street or '' }} {{ demo.address_city or '' }} {{ demo.address_state or '' }} {{ demo.address_zip or '' }}</p></div>
     <div class="form-group"><label>Emergency Contact</label><p>{{ demo.emergency_contact_name or '—' }} ({{ demo.emergency_contact_relationship or '—' }}) {{ demo.emergency_contact_phone or '' }}</p></div>
-    <div class="form-group"><label>Insurance ID</label><p>{{ mask_id('encrypted') if demo.insurance_id_encrypted else '—' }}</p></div>
-    <div class="form-group"><label>Government ID</label><p>{{ mask_id('encrypted') if demo.government_id_encrypted else '—' }}</p></div>
+    <div class="form-group"><label>Insurance ID</label><p>{{ mask_encrypted_id(demo.insurance_id_encrypted) if demo.insurance_id_encrypted else '—' }}</p></div>
+    <div class="form-group"><label>Government ID</label><p>{{ mask_encrypted_id(demo.government_id_encrypted) if demo.government_id_encrypted else '—' }}</p></div>
     {% elif not read_only %}
     {% set d = data if data is defined and data else {} %}
+    {% set _demo_action = url_for('staff.patient_demographics', patient_id=patient.id) %}
     <form method="POST">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        {{ antireplay_inputs("POST", _demo_action) }}
         {% if demo %}<input type="hidden" name="version" value="{{ demo.version }}">{% endif %}
 
         <div class="form-group">

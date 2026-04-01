@@ -15,6 +15,21 @@ HOLD_DURATION = timedelta(minutes=10)
 MAX_SIMULTANEOUS_HOLDS = 2
 
 
+def _has_room_conflict(room_id, slot_date, start_time, end_time, exclude_slot_id=None):
+    """Return True if a slot already occupies room_id during [start_time, end_time) on slot_date."""
+    if room_id is None:
+        return False
+    query = Slot.query.filter(
+        Slot.room_id == room_id,
+        Slot.date == slot_date,
+        Slot.start_time < end_time,
+        Slot.end_time > start_time,
+    )
+    if exclude_slot_id is not None:
+        query = query.filter(Slot.id != exclude_slot_id)
+    return query.first() is not None
+
+
 @schedule_bp.before_request
 def cleanup_expired():
     """Lazy expiry of stale holds on every schedule request."""
@@ -293,30 +308,34 @@ def delete_holiday(holiday_id):
 def bulk_generate():
     clinicians = Clinician.query.all()
 
+    rooms = Room.query.filter_by(is_active=True).order_by(Room.name).all()
+
     if request.method == "POST":
         clinician_id = request.form.get("clinician_id", type=int)
         date_from = request.form.get("date_from", "").strip()
         date_to = request.form.get("date_to", "").strip()
+        room_id = request.form.get("room_id", type=int) or None
 
         if not clinician_id or not date_from or not date_to:
             flash("All fields are required.", "danger")
-            return render_template("schedule/bulk_generate.html", clinicians=clinicians)
+            return render_template("schedule/bulk_generate.html", clinicians=clinicians, rooms=rooms)
 
         try:
             d_from = datetime.strptime(date_from, "%Y-%m-%d").date()
             d_to = datetime.strptime(date_to, "%Y-%m-%d").date()
         except ValueError:
             flash("Invalid dates.", "danger")
-            return render_template("schedule/bulk_generate.html", clinicians=clinicians)
+            return render_template("schedule/bulk_generate.html", clinicians=clinicians, rooms=rooms)
 
         templates = ScheduleTemplate.query.filter_by(clinician_id=clinician_id).all()
         if not templates:
             flash("No schedule template found for this clinician.", "warning")
-            return render_template("schedule/bulk_generate.html", clinicians=clinicians)
+            return render_template("schedule/bulk_generate.html", clinicians=clinicians, rooms=rooms)
 
         holiday_dates = {h.date for h in Holiday.query.filter(Holiday.date >= d_from, Holiday.date <= d_to).all()}
 
         created = 0
+        skipped_conflicts = 0
         current = d_from
         while current <= d_to:
             if current in holiday_dates:
@@ -337,21 +356,28 @@ def bulk_generate():
                         clinician_id=clinician_id, date=current, start_time=t.time()
                     ).first()
                     if not existing:
-                        slot = Slot(
-                            clinician_id=clinician_id,
-                            date=current,
-                            start_time=t.time(),
-                            end_time=slot_end_time,
-                            capacity=tmpl.capacity,
-                        )
-                        db.session.add(slot)
-                        created += 1
+                        if _has_room_conflict(room_id, current, t.time(), slot_end_time):
+                            skipped_conflicts += 1
+                        else:
+                            slot = Slot(
+                                clinician_id=clinician_id,
+                                room_id=room_id,
+                                date=current,
+                                start_time=t.time(),
+                                end_time=slot_end_time,
+                                capacity=tmpl.capacity,
+                            )
+                            db.session.add(slot)
+                            created += 1
                     t += timedelta(minutes=tmpl.slot_duration)
 
             current += timedelta(days=1)
 
         db.session.commit()
-        flash(f"Generated {created} slots.", "success")
+        msg = f"Generated {created} slots."
+        if skipped_conflicts:
+            msg += f" Skipped {skipped_conflicts} slot(s) due to room conflicts."
+        flash(msg, "success")
         return redirect(url_for("schedule.bulk_generate"))
 
-    return render_template("schedule/bulk_generate.html", clinicians=clinicians)
+    return render_template("schedule/bulk_generate.html", clinicians=clinicians, rooms=rooms)

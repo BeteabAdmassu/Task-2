@@ -35,6 +35,14 @@ def mask_id(value):
     return "***-**-" + value[-4:]
 
 
+def mask_encrypted_id(ciphertext):
+    """Decrypt ciphertext then return masked form showing last 4 of plaintext."""
+    if not ciphertext:
+        return ""
+    plaintext = decrypt_value(ciphertext)
+    return mask_id(plaintext) if plaintext else ""
+
+
 def reset_fernet():
     """Reset cached fernet instance (for testing)."""
     global _fernet

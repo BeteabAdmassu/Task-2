@@ -22,6 +22,15 @@
             <label for="date_to">To Date</label>
             <input type="date" id="date_to" name="date_to" class="form-control" required>
         </div>
+        <div class="form-group">
+            <label for="room_id">Room (optional)</label>
+            <select name="room_id" id="room_id" class="form-control">
+                <option value="">-- No room assigned --</option>
+                {% for r in rooms %}
+                <option value="{{ r.id }}">{{ r.name }}</option>
+                {% endfor %}
+            </select>
+        </div>
         <button type="submit" class="btn btn-primary">Generate Slots</button>
     </form>
 </div>

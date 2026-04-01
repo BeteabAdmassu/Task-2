@@ -162,7 +162,8 @@ def test_staff_front_desk_can_edit_patient_demographics(client, app):
     updated = dict(DEMO_DATA)
     updated["full_name"] = "Updated By Staff"
     updated["version"] = "1"
-    resp = client.post(f"/staff/patients/{pid}/demographics", data=updated, follow_redirects=True)
+    path = f"/staff/patients/{pid}/demographics"
+    resp = client.post(path, data=signed_data("POST", path, updated), follow_redirects=True)
     assert resp.status_code == 200
     with app.app_context():
         demo = PatientDemographics.query.filter_by(user_id=pid).first()
@@ -179,8 +180,9 @@ def test_clinician_cannot_edit_demographics(client, app):
     _login(client, "clin1")
     resp = client.get(f"/staff/patients/{pid}/demographics")
     assert resp.status_code == 200
-    # Clinician sees read-only view
-    resp = client.post(f"/staff/patients/{pid}/demographics", data=DEMO_DATA, follow_redirects=True)
+    # Clinician POSTs are rejected by read_only check (antireplay passes, role check redirects)
+    path = f"/staff/patients/{pid}/demographics"
+    resp = client.post(path, data=signed_data("POST", path, DEMO_DATA), follow_redirects=True)
     # Should get redirected with a warning
     assert resp.status_code == 200
 

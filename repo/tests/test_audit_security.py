@@ -14,6 +14,7 @@ from app.models.user import User
 from app.models.audit import SlowQuery, SignedRequest
 from app.models.idempotency import RequestToken
 from app.models.visit import Visit, VisitTransition
+from app.models.scheduling import Clinician, Room, Slot
 from app.extensions import db
 from tests.signing_helpers import signed_data
 
@@ -344,3 +345,225 @@ def test_transition_idempotency_works_with_hashed_token(app, db):
         assert t1.id == t2.id
         # Visit stays at checked_in — the second transition was suppressed.
         assert visit.status == "checked_in"
+
+
+# ---------------------------------------------------------------------------
+# Fix A: secure default startup (run.py defaults to "production")
+# ---------------------------------------------------------------------------
+
+def test_run_py_defaults_to_production():
+    """run.py must default to 'production', not 'development'."""
+    import re
+    with open("run.py") as f:
+        content = f.read()
+    # The fallback value in os.environ.get("FLASK_ENV", ...) must not be "development"
+    match = re.search(r'os\.environ\.get\(\s*["\']FLASK_ENV["\']\s*,\s*["\'](\w+)["\']\s*\)', content)
+    assert match is not None, "FLASK_ENV default not found in run.py"
+    assert match.group(1) != "development", (
+        "run.py defaults to 'development' — must default to 'production'"
+    )
+    assert match.group(1) == "production"
+
+
+# ---------------------------------------------------------------------------
+# Fix B: anti-replay on staff demographics POST
+# ---------------------------------------------------------------------------
+
+def test_staff_demographics_post_requires_antireplay(client, app, db):
+    """POST /staff/patients/<id>/demographics without signed fields returns 400."""
+    _create_user(app, "admin_sdar1", role="administrator")
+    uid = _create_user(app, "pat_sdar1", role="patient")
+    _login(client, "admin_sdar1")
+    path = f"/staff/patients/{uid}/demographics"
+    resp = client.post(
+        path,
+        data={
+            "full_name": "Test User",
+            "date_of_birth": "1990-01-01",
+            "phone": "555-000-0000",
+        },
+        follow_redirects=False,
+    )
+    assert resp.status_code == 400
+
+
+def test_staff_demographics_post_succeeds_with_antireplay(client, app, db):
+    """POST /staff/patients/<id>/demographics with signed fields saves demographics."""
+    _create_user(app, "admin_sdar2", role="administrator")
+    uid = _create_user(app, "pat_sdar2", role="patient")
+    _login(client, "admin_sdar2")
+    path = f"/staff/patients/{uid}/demographics"
+    resp = client.post(
+        path,
+        data=signed_data("POST", path, {
+            "full_name": "Signed User",
+            "date_of_birth": "1985-06-15",
+            "phone": "555-111-2222",
+        }),
+        follow_redirects=True,
+    )
+    assert resp.status_code == 200
+    from app.models.demographics import PatientDemographics
+    with app.app_context():
+        demo = PatientDemographics.query.filter_by(user_id=uid).first()
+        assert demo is not None
+        assert demo.full_name == "Signed User"
+
+
+# ---------------------------------------------------------------------------
+# Fix C: mask_encrypted_id returns last 4 of plaintext, not ciphertext slices
+# ---------------------------------------------------------------------------
+
+def test_mask_encrypted_id_shows_last_4_of_plaintext(app, db):
+    """mask_encrypted_id must decrypt and show last 4 chars of the plaintext."""
+    from app.utils.encryption import encrypt_value, mask_encrypted_id, mask_id
+    with app.app_context():
+        plaintext = "GOV987654321"
+        ciphertext = encrypt_value(plaintext)
+        masked = mask_encrypted_id(ciphertext)
+        # Should match masking the plaintext directly
+        assert masked == mask_id(plaintext)
+        assert masked.endswith("4321")
+        assert "***" in masked
+
+
+def test_mask_encrypted_id_not_masking_ciphertext(app, db):
+    """mask_encrypted_id must NOT produce the same result as mask_id on ciphertext."""
+    from app.utils.encryption import encrypt_value, mask_encrypted_id, mask_id
+    with app.app_context():
+        plaintext = "INS123456789"
+        ciphertext = encrypt_value(plaintext)
+        # Calling mask_id on the ciphertext directly gives wrong result
+        wrong = mask_id(ciphertext)
+        correct = mask_encrypted_id(ciphertext)
+        # The masked outputs must differ because plaintext != ciphertext
+        assert correct != wrong
+        assert correct.endswith("6789")
+
+
+def test_mask_encrypted_id_empty_returns_empty(app, db):
+    """mask_encrypted_id must return empty string for None/empty input."""
+    from app.utils.encryption import mask_encrypted_id
+    with app.app_context():
+        assert mask_encrypted_id(None) == ""
+        assert mask_encrypted_id("") == ""
+
+
+# ---------------------------------------------------------------------------
+# Fix D: room conflict detection in slot generation
+# ---------------------------------------------------------------------------
+
+def test_room_conflict_prevents_duplicate_room_slot(app, db):
+    """_has_room_conflict returns True when room is already booked for overlapping time."""
+    from app.routes.schedule import _has_room_conflict
+    from datetime import date, time
+    with app.app_context():
+        room = Room(name="TestRoom-Conflict", is_active=True)
+        db.session.add(room)
+        db.session.commit()
+
+        user = User(username="doc_rc1", role="clinician")
+        user.set_password("Password1")
+        db.session.add(user)
+        db.session.commit()
+        clin = Clinician(user_id=user.id)
+        db.session.add(clin)
+        db.session.commit()
+
+        slot_date = date(2099, 6, 1)
+        existing = Slot(
+            clinician_id=clin.id,
+            room_id=room.id,
+            date=slot_date,
+            start_time=time(9, 0),
+            end_time=time(9, 30),
+            capacity=1,
+        )
+        db.session.add(existing)
+        db.session.commit()
+
+        # Exact overlap: same time window
+        assert _has_room_conflict(room.id, slot_date, time(9, 0), time(9, 30)) is True
+        # Partial overlap: starts before, ends during
+        assert _has_room_conflict(room.id, slot_date, time(8, 45), time(9, 15)) is True
+        # No overlap: immediately after
+        assert _has_room_conflict(room.id, slot_date, time(9, 30), time(10, 0)) is False
+        # No conflict for a different room
+        assert _has_room_conflict(None, slot_date, time(9, 0), time(9, 30)) is False
+
+
+def test_bulk_generate_skips_room_conflict_slots(client, app, db):
+    """Bulk generate skips slots whose assigned room is already occupied."""
+    from datetime import date, time
+    _create_user(app, "admin_bg_room", role="administrator")
+    _login(client, "admin_bg_room")
+
+    with app.app_context():
+        room = Room(name="BulkRoom-Test", is_active=True)
+        db.session.add(room)
+        db.session.commit()
+        rid = room.id
+
+        doc_user = User(username="doc_bg_room", role="clinician")
+        doc_user.set_password("Password1")
+        db.session.add(doc_user)
+        db.session.commit()
+        clin = Clinician(user_id=doc_user.id, default_slot_duration_minutes=30)
+        db.session.add(clin)
+        db.session.commit()
+
+        # Monday template 09:00–09:30
+        from app.models.scheduling import ScheduleTemplate
+        tmpl = ScheduleTemplate(
+            clinician_id=clin.id,
+            day_of_week=0,  # Monday
+            start_time=time(9, 0),
+            end_time=time(9, 30),
+            slot_duration=30,
+            capacity=1,
+        )
+        db.session.add(tmpl)
+        db.session.commit()
+
+        # Pre-occupy the room on the target Monday
+        slot_date = date(2099, 7, 7)  # a Monday
+        blocker_user = User(username="doc_bg_blocker", role="clinician")
+        blocker_user.set_password("Password1")
+        db.session.add(blocker_user)
+        db.session.commit()
+        blocker_clin = Clinician(user_id=blocker_user.id)
+        db.session.add(blocker_clin)
+        db.session.commit()
+
+        # Unique start_time for blocker clinician
+        blocker_slot = Slot(
+            clinician_id=blocker_clin.id,
+            room_id=rid,
+            date=slot_date,
+            start_time=time(9, 0),
+            end_time=time(9, 30),
+            capacity=1,
+        )
+        db.session.add(blocker_slot)
+        db.session.commit()
+        cid = clin.id
+
+    resp = client.post(
+        "/schedule/admin/bulk-generate",
+        data={
+            "clinician_id": cid,
+            "date_from": "2099-07-07",
+            "date_to": "2099-07-07",
+            "room_id": rid,
+        },
+        follow_redirects=True,
+    )
+    assert resp.status_code == 200
+
+    with app.app_context():
+        # The conflicting slot should not have been created for clin (only blocker_clin has a slot)
+        new_slots = Slot.query.filter_by(
+            clinician_id=cid,
+            date=date(2099, 7, 7),
+        ).all()
+        assert len(new_slots) == 0
