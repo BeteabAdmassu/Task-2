@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+{% block title %}My Reminders - MeridianCare{% endblock %}
+
+{% block content %}
+<h1>My Reminders</h1>
+
+{% if reminders %}
+<table class="table">
+    <thead>
+        <tr><th>Type</th><th>Message</th><th>Due Date</th><th>Actions</th></tr>
+    </thead>
+    <tbody>
+        {% for r in reminders %}
+        <tr>
+            <td>{{ r.type | title }}</td>
+            <td>{{ r.message }}</td>
+            <td>{{ r.due_date.strftime('%Y-%m-%d') if r.due_date else '' }}</td>
+            <td>
+                <form method="POST" action="{{ url_for('reminders.dismiss', reminder_id=r.id) }}">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <button type="submit" class="btn btn-sm btn-secondary">Dismiss</button>
+                </form>
+            </td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% else %}
+<p>No pending reminders.</p>
+{% endif %}
+{% endblock %}

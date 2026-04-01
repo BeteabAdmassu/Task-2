@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+{% block title %}Coverage Zones - MeridianCare{% endblock %}
+
+{% block content %}
+<h1>Coverage Zones</h1>
+
+<h2>Create New Zone</h2>
+<form method="POST" action="{{ url_for('coverage.zones') }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <div class="form-group">
+        <label for="name">Zone Name</label>
+        <input type="text" id="name" name="name" required class="form-control">
+    </div>
+    <div class="form-group">
+        <label for="description">Description</label>
+        <input type="text" id="description" name="description" class="form-control">
+    </div>
+    <div class="form-group">
+        <label for="zip_codes">ZIP Codes (comma separated)</label>
+        <input type="text" id="zip_codes" name="zip_codes" class="form-control" placeholder="10001, 10002, 10003">
+    </div>
+    <button type="submit" class="btn btn-primary">Create Zone</button>
+</form>
+
+<h2>Existing Zones</h2>
+<table class="table">
+    <thead>
+        <tr><th>Name</th><th>ZIP Codes</th><th>Active</th><th>Actions</th></tr>
+    </thead>
+    <tbody>
+        {% for zone in zones %}
+        <tr>
+            <td>{{ zone.name }}</td>
+            <td>{{ (zone.zip_codes_json or []) | join(', ') }}</td>
+            <td>{{ 'Yes' if zone.is_active else 'No' }}</td>
+            <td><a href="{{ url_for('coverage.zone_detail', zone_id=zone.id) }}" class="btn btn-sm btn-secondary">View</a></td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% endblock %}

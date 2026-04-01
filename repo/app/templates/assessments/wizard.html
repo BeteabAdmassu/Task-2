@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+
+{% block title %}Health Assessment — MeridianCare{% endblock %}
+
+{% block content %}
+<div class="card">
+    <div class="card-header">
+        <h2>Health Assessment</h2>
+    </div>
+
+    <div class="progress-bar-container">
+        <div class="progress-bar" style="width: {{ (current_step / total_steps * 100)|int }}%"></div>
+    </div>
+    <p class="progress-text">Step {{ current_step + 1 }} of {{ total_steps }}</p>
+
+    <div id="assessment-content">
+        {% include "assessments/_step.html" with context %}
+    </div>
+</div>
+
+<style>
+    .progress-bar-container { background: var(--border); border-radius: 4px; height: 8px; margin: 1rem 0 0.5rem; overflow: hidden; }
+    .progress-bar { background: var(--primary); height: 100%; transition: width 0.3s; }
+    .progress-text { font-size: 0.85rem; color: var(--text-light); margin-bottom: 1rem; }
+</style>
+{% endblock %}

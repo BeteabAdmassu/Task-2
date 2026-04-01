@@ -1,0 +1,169 @@
+"""Tests for prompt 10 — Security & Privacy."""
+
+import pytest
+from app.models.user import User
+from app.extensions import db
+
+
+def _create_user(app, username, role="patient", password="Password1"):
+    with app.app_context():
+        user = User(username=username, role=role)
+        user.set_password(password)
+        db.session.add(user)
+        db.session.commit()
+        return user.id
+
+
+def _login(client, username, password="Password1"):
+    return client.post(
+        "/auth/login",
+        data={"username": username, "password": password},
+        follow_redirects=True,
+    )
+
+
+def test_security_headers_present(client, app, db):
+    resp = client.get("/health")
+    assert resp.headers.get("X-Content-Type-Options") == "nosniff"
+    assert resp.headers.get("X-Frame-Options") == "DENY"
+    assert resp.headers.get("X-XSS-Protection") == "1; mode=block"
+    assert "max-age" in resp.headers.get("Strict-Transport-Security", "")
+    assert "default-src" in resp.headers.get("Content-Security-Policy", "")
+
+
+def test_correlation_id_header(client, app, db):
+    resp = client.get("/health")
+    assert "X-Correlation-ID" in resp.headers
+
+
+def test_change_password_page(client, app, db):
+    _create_user(app, "pat_sec1")
+    _login(client, "pat_sec1")
+    resp = client.get("/auth/change-password")
+    assert resp.status_code == 200
+    assert b"Change Password" in resp.data
+
+
+def test_change_password_success(client, app, db):
+    _create_user(app, "pat_sec2")
+    _login(client, "pat_sec2")
+    resp = client.post(
+        "/auth/change-password",
+        data={
+            "current_password": "Password1",
+            "new_password": "NewPass1a",
+            "confirm_password": "NewPass1a",
+        },
+        follow_redirects=True,
+    )
+    assert resp.status_code == 200
+    # Verify new password works
+    client.post("/auth/logout", follow_redirects=True)
+    resp = _login(client, "pat_sec2", "NewPass1a")
+    assert resp.status_code == 200
+
+
+def test_change_password_wrong_current(client, app, db):
+    _create_user(app, "pat_sec3")
+    _login(client, "pat_sec3")
+    resp = client.post(
+        "/auth/change-password",
+        data={
+            "current_password": "WrongPass1",
+            "new_password": "NewPass1a",
+            "confirm_password": "NewPass1a",
+        },
+        follow_redirects=True,
+    )
+    assert b"Current password is incorrect" in resp.data
+
+
+def test_change_password_mismatch(client, app, db):
+    _create_user(app, "pat_sec4")
+    _login(client, "pat_sec4")
+    resp = client.post(
+        "/auth/change-password",
+        data={
+            "current_password": "Password1",
+            "new_password": "NewPass1a",
+            "confirm_password": "Different1a",
+        },
+        follow_redirects=True,
+    )
+    assert b"do not match" in resp.data
+
+
+def test_change_password_weak(client, app, db):
+    _create_user(app, "pat_sec5")
+    _login(client, "pat_sec5")
+    resp = client.post(
+        "/auth/change-password",
+        data={
+            "current_password": "Password1",
+            "new_password": "weak",
+            "confirm_password": "weak",
+        },
+        follow_redirects=True,
+    )
+    assert b"at least 8 characters" in resp.data
+
+
+def test_change_password_requires_login(client, app, db):
+    resp = client.get("/auth/change-password")
+    assert resp.status_code in (302, 401)
+
+
+def test_export_data_requires_login(client, app, db):
+    resp = client.get("/patient/export")
+    assert resp.status_code in (302, 401)
+
+
+def test_export_data_returns_json_download(client, app, db):
+    uid = _create_user(app, "pat_exp1")
+    _login(client, "pat_exp1")
+    resp = client.get("/patient/export")
+    assert resp.status_code == 200
+    assert resp.content_type.startswith("application/json")
+    assert "attachment" in resp.headers.get("Content-Disposition", "")
+    data = resp.get_json()
+    assert "user" in data
+    assert data["user"]["username"] == "pat_exp1"
+    assert "assessments" in data
+    assert "appointments" in data
+
+
+def test_export_data_denied_for_non_patient(client, app, db):
+    _create_user(app, "admin_exp1", role="administrator")
+    _login(client, "admin_exp1")
+    resp = client.get("/patient/export")
+    assert resp.status_code == 403
+
+
+def test_delete_account_requires_password(client, app, db):
+    uid = _create_user(app, "pat_del1")
+    _login(client, "pat_del1")
+    resp = client.post(
+        "/patient/delete-account",
+        data={"password": "WrongPass1"},
+        follow_redirects=True,
+    )
+    assert b"Password is incorrect" in resp.data
+    # User should still be active
+    with app.app_context():
+        user = db.session.get(User, uid)
+        assert user.is_active is True
+
+
+def test_delete_account_anonymizes_user(client, app, db):
+    uid = _create_user(app, "pat_del2")
+    _login(client, "pat_del2")
+    resp = client.post(
+        "/patient/delete-account",
+        data={"password": "Password1"},
+        follow_redirects=True,
+    )
+    assert resp.status_code == 200
+    with app.app_context():
+        user = db.session.get(User, uid)
+        assert user.username == f"deleted_{uid}"
+        assert user.is_active is False

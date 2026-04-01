@@ -1,0 +1,45 @@
+{% if error is defined and error %}
+<div class="alert alert-danger">{{ error }}</div>
+{% endif %}
+
+{% if locked_seconds is defined and locked_seconds %}
+<div class="alert alert-warning" id="lockout-msg">
+    Account locked. Try again in <span id="lockout-timer">{{ locked_seconds }}</span> seconds.
+</div>
+<script>
+(function() {
+    var remaining = {{ locked_seconds }};
+    var timer = document.getElementById('lockout-timer');
+    var interval = setInterval(function() {
+        remaining--;
+        if (remaining <= 0) {
+            clearInterval(interval);
+            document.getElementById('lockout-msg').style.display = 'none';
+        } else {
+            var m = Math.floor(remaining / 60);
+            var s = remaining % 60;
+            timer.textContent = (m > 0 ? m + 'm ' : '') + s + 's';
+        }
+    }, 1000);
+})();
+</script>
+{% endif %}
+
+<form hx-post="{{ url_for('auth.login') }}" hx-target="#login-form-container" hx-swap="innerHTML">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+    <div class="form-group">
+        <label for="username">Username</label>
+        <input type="text" id="username" name="username" class="form-control"
+               value="{{ username|default('', true) }}"
+               required autocomplete="username">
+    </div>
+
+    <div class="form-group">
+        <label for="password">Password</label>
+        <input type="password" id="password" name="password" class="form-control"
+               required autocomplete="current-password">
+    </div>
+
+    <button type="submit" class="btn btn-primary btn-block">Log In</button>
+</form>

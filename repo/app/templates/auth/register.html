@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+
+{% block title %}Register — MeridianCare{% endblock %}
+
+{% block content %}
+<div class="auth-container">
+    <div class="auth-card card">
+        <h2>Create Account</h2>
+        <div id="register-form-container">
+            {% include "auth/_register_form.html" %}
+        </div>
+        <p class="auth-link">Already have an account? <a href="{{ url_for('auth.login') }}" hx-get="{{ url_for('auth.login') }}" hx-target="#main-content" hx-push-url="true">Log in</a></p>
+    </div>
+</div>
+{% endblock %}

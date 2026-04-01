@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+{% block title %}Visit Dashboard - MeridianCare{% endblock %}
+
+{% block content %}
+<h1>Visit Dashboard</h1>
+
+<table class="table">
+    <thead>
+        <tr>
+            <th>ID</th>
+            <th>Patient</th>
+            <th>Clinician</th>
+            <th>Status</th>
+            <th>Created</th>
+            <th>Actions</th>
+        </tr>
+    </thead>
+    <tbody id="visit-rows" hx-get="{{ url_for('visits.dashboard_poll') }}" hx-trigger="every 30s" hx-swap="innerHTML">
+        {% include "visits/_visit_rows.html" %}
+    </tbody>
+</table>
+{% endblock %}

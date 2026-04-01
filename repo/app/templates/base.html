@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}MeridianCare{% endblock %}</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <meta name="csrf-token" content="{{ csrf_token() }}">
+    <script src="{{ url_for('static', filename='js/htmx.min.js') }}"></script>
+    {% block extra_head %}{% endblock %}
+</head>
+<body hx-headers='{"X-CSRFToken": "{{ csrf_token() }}"}'>
+    <div id="htmx-indicator" class="htmx-indicator">
+        <div class="spinner"></div>
+    </div>
+
+    <header class="site-header">
+        <div class="container header-content">
+            <a href="/" class="logo" hx-get="/" hx-target="#main-content" hx-push-url="true">
+                <span class="logo-icon">&#9764;</span>
+                MeridianCare
+            </a>
+            <nav class="main-nav" id="main-nav">
+                {% block nav %}
+                {% if current_user.is_authenticated %}
+                    <a href="/" hx-get="/" hx-target="#main-content" hx-push-url="true">Home</a>
+                    {% if current_user.role == 'patient' %}
+                    <a href="{{ url_for('patient.demographics') }}" hx-get="{{ url_for('patient.demographics') }}" hx-target="#main-content" hx-push-url="true">My Profile</a>
+                    {% endif %}
+                    {% if current_user.role in ('administrator', 'clinician', 'front_desk') %}
+                    <a href="{{ url_for('staff.patient_list') }}" hx-get="{{ url_for('staff.patient_list') }}" hx-target="#main-content" hx-push-url="true">Patients</a>
+                    <a href="{{ url_for('visits.dashboard') }}" hx-get="{{ url_for('visits.dashboard') }}" hx-target="#main-content" hx-push-url="true">Visits</a>
+                    {% endif %}
+                    {% if current_user.role == 'patient' %}
+                    <a href="{{ url_for('reminders.my_reminders') }}" hx-get="{{ url_for('reminders.my_reminders') }}" hx-target="#main-content" hx-push-url="true">Reminders</a>
+                    {% endif %}
+                    {% if current_user.role == 'administrator' %}
+                    <a href="{{ url_for('admin.users') }}" hx-get="{{ url_for('admin.users') }}" hx-target="#main-content" hx-push-url="true">Users</a>
+                    <a href="{{ url_for('coverage.zones') }}" hx-get="{{ url_for('coverage.zones') }}" hx-target="#main-content" hx-push-url="true">Zones</a>
+                    <a href="{{ url_for('audit.audit_log') }}" hx-get="{{ url_for('audit.audit_log') }}" hx-target="#main-content" hx-push-url="true">Audit</a>
+                    <a href="{{ url_for('observability.observability') }}" hx-get="{{ url_for('observability.observability') }}" hx-target="#main-content" hx-push-url="true">System</a>
+                    {% endif %}
+                    <span style="color: var(--text-light); font-size: 0.9rem;">{{ current_user.username }} <span class="badge badge-primary">{{ current_user.role | replace('_', ' ') | title }}</span></span>
+                    <form method="POST" action="{{ url_for('auth.logout') }}" style="display:inline;">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                        <button type="submit" class="btn btn-secondary" style="padding:0.35rem 0.75rem;">Logout</button>
+                    </form>
+                {% else %}
+                    <a href="{{ url_for('auth.login') }}" hx-get="{{ url_for('auth.login') }}" hx-target="#main-content" hx-push-url="true">Login</a>
+                    <a href="{{ url_for('auth.register') }}" hx-get="{{ url_for('auth.register') }}" hx-target="#main-content" hx-push-url="true">Register</a>
+                {% endif %}
+                {% endblock %}
+            </nav>
+        </div>
+    </header>
+
+    <main class="container" id="main-content" hx-indicator="#htmx-indicator">
+        {% with messages = get_flashed_messages(with_categories=true) %}
+            {% if messages %}
+                {% for category, message in messages %}
+                    <div class="alert alert-{{ category }}">{{ message }}</div>
+                {% endfor %}
+            {% endif %}
+        {% endwith %}
+        {% block content %}{% endblock %}
+    </main>
+
+    <footer class="site-footer">
+        <div class="container">
+            <p>&copy; 2026 MeridianCare Clinic Operations Platform</p>
+        </div>
+    </footer>
+
+    {% block extra_scripts %}{% endblock %}
+</body>
+</html>

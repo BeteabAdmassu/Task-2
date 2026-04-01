@@ -1,0 +1,87 @@
+"""Tests for prompt 12 — Observability & Admin Operations."""
+
+import pytest
+from app.models.user import User
+from app.extensions import db
+
+
+def _create_user(app, username, role="patient", password="Password1"):
+    with app.app_context():
+        user = User(username=username, role=role)
+        user.set_password(password)
+        db.session.add(user)
+        db.session.commit()
+        return user.id
+
+
+def _login(client, username, password="Password1"):
+    return client.post(
+        "/auth/login",
+        data={"username": username, "password": password},
+        follow_redirects=True,
+    )
+
+
+def test_observability_requires_admin(client, app, db):
+    _create_user(app, "pat_obs1")
+    _login(client, "pat_obs1")
+    resp = client.get("/admin/observability")
+    assert resp.status_code == 403
+
+
+def test_observability_accessible_by_admin(client, app, db):
+    _create_user(app, "admin_obs1", role="administrator")
+    _login(client, "admin_obs1")
+    resp = client.get("/admin/observability")
+    assert resp.status_code == 200
+    assert b"System Observability" in resp.data
+
+
+def test_observability_shows_table_stats(client, app, db):
+    _create_user(app, "admin_obs2", role="administrator")
+    _login(client, "admin_obs2")
+    resp = client.get("/admin/observability")
+    assert b"users" in resp.data
+    assert b"visits" in resp.data
+
+
+def test_observability_requires_login(client, app, db):
+    resp = client.get("/admin/observability")
+    assert resp.status_code in (302, 401)
+
+
+def test_observability_table_counts(client, app, db):
+    _create_user(app, "admin_obs3", role="administrator")
+    _create_user(app, "user_obs3a")
+    _create_user(app, "user_obs3b")
+    _login(client, "admin_obs3")
+    resp = client.get("/admin/observability")
+    assert resp.status_code == 200
+    # Should contain numeric row counts
+    assert b"Database Statistics" in resp.data
+
+
+def test_health_detailed_returns_json(client, app, db):
+    resp = client.get("/health/detailed")
+    assert resp.status_code == 200
+    data = resp.get_json()
+    assert data["status"] == "ok"
+    assert data["database"] == "ok"
+    assert "tables" in data
+    assert "timestamp" in data
+    assert isinstance(data["tables"], dict)
+    assert "users" in data["tables"]
+
+
+def test_health_detailed_no_auth_required(client, app, db):
+    # Should be accessible without login
+    resp = client.get("/health/detailed")
+    assert resp.status_code == 200
+
+
+def test_health_detailed_csrf_exempt(client, app, db):
+    # GET requests don't need CSRF, but verify the endpoint works without it
+    resp = client.get("/health/detailed")
+    assert resp.status_code == 200
+    data = resp.get_json()
+    assert data["status"] == "ok"

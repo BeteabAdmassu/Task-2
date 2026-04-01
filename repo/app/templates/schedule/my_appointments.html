@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+{% block title %}My Appointments — MeridianCare{% endblock %}
+{% block content %}
+<div class="card">
+    <div class="card-header">
+        <h2>My Appointments</h2>
+        <a href="{{ url_for('schedule.available') }}" class="btn btn-primary">Book New</a>
+    </div>
+    {% if reservations %}
+    <div class="table-responsive">
+        <table>
+            <thead><tr><th>Date</th><th>Time</th><th>Clinician</th><th>Status</th><th>Actions</th></tr></thead>
+            <tbody>
+            {% for r in reservations %}
+            <tr>
+                <td>{{ r.slot.date }}</td>
+                <td>{{ r.slot.start_time.strftime('%H:%M') }} — {{ r.slot.end_time.strftime('%H:%M') }}</td>
+                <td>{{ r.slot.clinician.user.username }}</td>
+                <td><span class="badge badge-{{ 'primary' if r.status == 'confirmed' else 'warning' }}">{{ r.status | title }}</span></td>
+                <td>
+                    {% if r.status in ('held', 'confirmed') %}
+                    <form method="POST" action="{{ url_for('schedule.cancel', reservation_id=r.id) }}" style="display:inline;">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                        <button type="submit" class="btn btn-danger" style="padding:0.25rem 0.5rem; font-size:0.85rem;">Cancel</button>
+                    </form>
+                    {% endif %}
+                </td>
+            </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+    <p>No appointments.</p>
+    {% endif %}
+</div>
+{% endblock %}

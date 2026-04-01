@@ -1,0 +1,53 @@
+{% extends "base.html" %}
+{% block title %}Available Appointments — MeridianCare{% endblock %}
+{% block content %}
+<div class="card">
+    <div class="card-header"><h2>Available Appointments</h2></div>
+
+    <form method="GET" style="display:flex; gap:1rem; flex-wrap:wrap; margin-bottom:1rem;">
+        <div class="form-group">
+            <label for="date_from">From</label>
+            <input type="date" id="date_from" name="date_from" class="form-control" value="{{ date_from }}">
+        </div>
+        <div class="form-group">
+            <label for="date_to">To</label>
+            <input type="date" id="date_to" name="date_to" class="form-control" value="{{ date_to }}">
+        </div>
+        <div class="form-group">
+            <label for="clinician_id">Clinician</label>
+            <select name="clinician_id" id="clinician_id" class="form-control">
+                <option value="">All</option>
+                {% for c in clinicians %}
+                <option value="{{ c.id }}" {% if selected_clinician == c.id %}selected{% endif %}>{{ c.user.username }} — {{ c.specialty or 'General' }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div class="form-group" style="align-self:flex-end;"><button type="submit" class="btn btn-primary">Search</button></div>
+    </form>
+
+    {% if slots %}
+    <div class="table-responsive">
+        <table>
+            <thead><tr><th>Date</th><th>Time</th><th>Clinician</th><th>Action</th></tr></thead>
+            <tbody>
+            {% for s in slots %}
+            <tr>
+                <td>{{ s.date }}</td>
+                <td>{{ s.start_time.strftime('%H:%M') }} — {{ s.end_time.strftime('%H:%M') }}</td>
+                <td>{{ s.clinician.user.username }}</td>
+                <td>
+                    <form method="POST" action="{{ url_for('schedule.hold', slot_id=s.id) }}" style="display:inline;">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                        <button type="submit" class="btn btn-primary" style="padding:0.25rem 0.75rem; font-size:0.85rem;">Hold</button>
+                    </form>
+                </td>
+            </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+    <p>No available slots for the selected period.</p>
+    {% endif %}
+</div>
+{% endblock %}

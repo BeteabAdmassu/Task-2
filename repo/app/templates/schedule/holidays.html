@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+{% block title %}Holidays — MeridianCare{% endblock %}
+{% block content %}
+<div class="card">
+    <div class="card-header"><h2>Holiday Management</h2></div>
+    <form method="POST" style="display:flex; gap:1rem; flex-wrap:wrap; margin-bottom:1rem;">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <div class="form-group">
+            <label for="date">Date</label>
+            <input type="date" id="date" name="date" class="form-control" required>
+        </div>
+        <div class="form-group">
+            <label for="name">Holiday Name</label>
+            <input type="text" id="name" name="name" class="form-control" required>
+        </div>
+        <div class="form-group" style="align-self:flex-end;"><button type="submit" class="btn btn-primary">Add Holiday</button></div>
+    </form>
+
+    {% if holidays %}
+    <div class="table-responsive">
+        <table>
+            <thead><tr><th>Date</th><th>Name</th><th>Actions</th></tr></thead>
+            <tbody>
+            {% for h in holidays %}
+            <tr>
+                <td>{{ h.date }}</td>
+                <td>{{ h.name }}</td>
+                <td>
+                    <form method="POST" action="{{ url_for('schedule.delete_holiday', holiday_id=h.id) }}" style="display:inline;">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                        <button type="submit" class="btn btn-danger" style="padding:0.25rem 0.5rem; font-size:0.85rem;">Remove</button>
+                    </form>
+                </td>
+            </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+    <p>No holidays defined.</p>
+    {% endif %}
+</div>
+{% endblock %}

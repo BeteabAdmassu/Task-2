@@ -1,0 +1,106 @@
+{% extends "base.html" %}
+
+{% block title %}Patient Demographics — MeridianCare{% endblock %}
+
+{% block content %}
+<div class="card">
+    <div class="card-header">
+        <h2>Demographics: {{ patient.username }}</h2>
+    </div>
+
+    {% if not demo %}
+    <p>No demographics on file.</p>
+    {% if not read_only %}
+    <p>Use the form below to create demographics for this patient.</p>
+    {% endif %}
+    {% endif %}
+
+    {% if read_only and demo %}
+    <div class="form-group"><label>Full Name</label><p>{{ demo.full_name }}</p></div>
+    <div class="form-group"><label>Date of Birth</label><p>{{ demo.date_of_birth }}</p></div>
+    <div class="form-group"><label>Gender</label><p>{{ demo.gender or '—' }}</p></div>
+    <div class="form-group"><label>Phone</label><p>{{ demo.phone }}</p></div>
+    <div class="form-group"><label>Address</label><p>{{ demo.address_street or '' }} {{ demo.address_city or '' }} {{ demo.address_state or '' }} {{ demo.address_zip or '' }}</p></div>
+    <div class="form-group"><label>Emergency Contact</label><p>{{ demo.emergency_contact_name or '—' }} ({{ demo.emergency_contact_relationship or '—' }}) {{ demo.emergency_contact_phone or '' }}</p></div>
+    <div class="form-group"><label>Insurance ID</label><p>{{ mask_id('encrypted') if demo.insurance_id_encrypted else '—' }}</p></div>
+    <div class="form-group"><label>Government ID</label><p>{{ mask_id('encrypted') if demo.government_id_encrypted else '—' }}</p></div>
+    {% elif not read_only %}
+    {% set d = data if data is defined and data else {} %}
+    <form method="POST">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        {% if demo %}<input type="hidden" name="version" value="{{ demo.version }}">{% endif %}
+
+        <div class="form-group">
+            <label for="full_name">Full Name *</label>
+            <input type="text" id="full_name" name="full_name" class="form-control" required
+                   value="{{ d.get('full_name', '') if d else (demo.full_name if demo else '') }}">
+        </div>
+        <div class="form-group">
+            <label for="date_of_birth">Date of Birth *</label>
+            <input type="date" id="date_of_birth" name="date_of_birth" class="form-control" required
+                   value="{{ d.get('date_of_birth', '') if d else (demo.date_of_birth if demo else '') }}">
+        </div>
+        <div class="form-group">
+            <label for="gender">Gender</label>
+            <select id="gender" name="gender" class="form-control">
+                <option value="">-- Select --</option>
+                {% for g in ['Male', 'Female', 'Non-binary', 'Prefer not to say'] %}
+                <option value="{{ g }}" {% if (d.get('gender') if d else (demo.gender if demo else '')) == g %}selected{% endif %}>{{ g }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div class="form-group">
+            <label for="phone">Phone *</label>
+            <input type="tel" id="phone" name="phone" class="form-control" required
+                   value="{{ d.get('phone', '') if d else (demo.phone if demo else '') }}">
+        </div>
+        <div class="form-group">
+            <label for="address_street">Street</label>
+            <input type="text" id="address_street" name="address_street" class="form-control"
+                   value="{{ d.get('address_street', '') if d else (demo.address_street if demo else '') }}">
+        </div>
+        <div class="form-group">
+            <label for="address_city">City</label>
+            <input type="text" id="address_city" name="address_city" class="form-control"
+                   value="{{ d.get('address_city', '') if d else (demo.address_city if demo else '') }}">
+        </div>
+        <div class="form-group">
+            <label for="address_state">State</label>
+            <input type="text" id="address_state" name="address_state" class="form-control"
+                   value="{{ d.get('address_state', '') if d else (demo.address_state if demo else '') }}">
+        </div>
+        <div class="form-group">
+            <label for="address_zip">ZIP</label>
+            <input type="text" id="address_zip" name="address_zip" class="form-control"
+                   value="{{ d.get('address_zip', '') if d else (demo.address_zip if demo else '') }}">
+        </div>
+        <div class="form-group">
+            <label for="emergency_contact_name">Emergency Contact Name</label>
+            <input type="text" id="emergency_contact_name" name="emergency_contact_name" class="form-control"
+                   value="{{ d.get('emergency_contact_name', '') if d else (demo.emergency_contact_name if demo else '') }}">
+        </div>
+        <div class="form-group">
+            <label for="emergency_contact_phone">Emergency Contact Phone</label>
+            <input type="tel" id="emergency_contact_phone" name="emergency_contact_phone" class="form-control"
+                   value="{{ d.get('emergency_contact_phone', '') if d else (demo.emergency_contact_phone if demo else '') }}">
+        </div>
+        <div class="form-group">
+            <label for="emergency_contact_relationship">Relationship</label>
+            <input type="text" id="emergency_contact_relationship" name="emergency_contact_relationship" class="form-control"
+                   value="{{ d.get('emergency_contact_relationship', '') if d else (demo.emergency_contact_relationship if demo else '') }}">
+        </div>
+        <div class="form-group">
+            <label for="insurance_id">Insurance ID</label>
+            <input type="text" id="insurance_id" name="insurance_id" class="form-control"
+                   value="{{ d.get('insurance_id', '') if d else '' }}">
+        </div>
+        <div class="form-group">
+            <label for="government_id">Government ID</label>
+            <input type="text" id="government_id" name="government_id" class="form-control"
+                   value="{{ d.get('government_id', '') if d else '' }}">
+        </div>
+        <button type="submit" class="btn btn-primary">Save Demographics</button>
+    </form>
+    {% endif %}
+</div>
+{% endblock %}

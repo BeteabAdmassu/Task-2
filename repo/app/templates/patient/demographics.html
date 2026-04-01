@@ -1,0 +1,14 @@
+{% extends "base.html" %}
+
+{% block title %}My Demographics — MeridianCare{% endblock %}
+
+{% block content %}
+<div class="card">
+    <div class="card-header">
+        <h2>My Demographics</h2>
+    </div>
+    <div id="demographics-form-container">
+        {% include "patient/_demographics_form.html" %}
+    </div>
+</div>
+{% endblock %}

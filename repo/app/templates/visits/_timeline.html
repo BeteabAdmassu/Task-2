@@ -1,0 +1,17 @@
+<div class="timeline">
+    <h4>Timeline for Visit #{{ visit.id }}</h4>
+    {% if transitions %}
+    <ul>
+        {% for t in transitions %}
+        <li>
+            <strong>{{ t.from_status }}</strong> &rarr; <strong>{{ t.to_status }}</strong>
+            by {{ t.changed_by_user.username if t.changed_by_user else 'Unknown' }}
+            at {{ t.timestamp.strftime('%Y-%m-%d %H:%M') if t.timestamp else '' }}
+            {% if t.reason %}<br><em>Reason: {{ t.reason }}</em>{% endif %}
+        </li>
+        {% endfor %}
+    </ul>
+    {% else %}
+    <p>No transitions recorded.</p>
+    {% endif %}
+</div>

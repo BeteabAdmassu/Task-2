@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+
+{% block title %}Patient List — MeridianCare{% endblock %}
+
+{% block content %}
+<div class="card">
+    <div class="card-header">
+        <h2>Patients</h2>
+    </div>
+    <div class="table-responsive">
+        <table>
+            <thead>
+                <tr>
+                    <th>Username</th>
+                    <th>Full Name</th>
+                    <th>Phone</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for patient in patients %}
+                <tr>
+                    <td>{{ patient.username }}</td>
+                    <td>{{ demographics.get(patient.id, None).full_name if demographics.get(patient.id) else '—' }}</td>
+                    <td>{{ demographics.get(patient.id, None).phone if demographics.get(patient.id) else '—' }}</td>
+                    <td>
+                        <a href="{{ url_for('staff.patient_demographics', patient_id=patient.id) }}"
+                           class="btn btn-secondary" style="padding:0.25rem 0.75rem; font-size:0.85rem;">
+                           View Demographics
+                        </a>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}

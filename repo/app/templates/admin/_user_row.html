@@ -1,0 +1,44 @@
+<tr id="user-row-{{ user.id }}">
+    <td>{{ user.id }}</td>
+    <td>{{ user.username }}</td>
+    <td>
+        <form hx-post="{{ url_for('admin.change_role', user_id=user.id) }}"
+              hx-target="#user-row-{{ user.id }}" hx-swap="outerHTML"
+              style="display:inline-flex; gap:0.5rem; align-items:center;">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <select name="role" class="form-control" style="width:auto; padding:0.25rem 0.5rem;"
+                    {% if user.id == current_user.id %}disabled{% endif %}>
+                {% for r in ['administrator', 'clinician', 'front_desk', 'patient'] %}
+                <option value="{{ r }}" {% if user.role == r %}selected{% endif %}>{{ r | replace('_', ' ') | title }}</option>
+                {% endfor %}
+            </select>
+            {% if user.id != current_user.id %}
+            <button type="submit" class="btn btn-secondary" style="padding:0.25rem 0.5rem; font-size:0.85rem;">Save</button>
+            {% endif %}
+        </form>
+    </td>
+    <td>
+        {% if user.is_active %}
+            <span class="badge badge-success">Active</span>
+        {% else %}
+            <span class="badge badge-danger">Inactive</span>
+        {% endif %}
+    </td>
+    <td>{{ user.created_at.strftime('%Y-%m-%d %H:%M') if user.created_at else '' }}</td>
+    <td>
+        {% if user.id != current_user.id %}
+        <form hx-post="{{ url_for('admin.change_status', user_id=user.id) }}"
+              hx-target="#user-row-{{ user.id }}" hx-swap="outerHTML"
+              style="display:inline;">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            {% if user.is_active %}
+            <input type="hidden" name="is_active" value="false">
+            <button type="submit" class="btn btn-danger" style="padding:0.25rem 0.5rem; font-size:0.85rem;">Deactivate</button>
+            {% else %}
+            <input type="hidden" name="is_active" value="true">
+            <button type="submit" class="btn btn-primary" style="padding:0.25rem 0.5rem; font-size:0.85rem;">Activate</button>
+            {% endif %}
+        </form>
+        {% endif %}
+    </td>
+</tr>

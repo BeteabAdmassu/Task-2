@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+{% block title %}Observability - MeridianCare{% endblock %}
+
+{% block content %}
+<h1>System Observability</h1>
+
+<h2>Database Statistics</h2>
+<table class="table">
+    <thead>
+        <tr><th>Table</th><th>Row Count</th></tr>
+    </thead>
+    <tbody>
+        {% for table, count in table_stats.items() %}
+        <tr>
+            <td>{{ table }}</td>
+            <td>{{ count }}</td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% endblock %}

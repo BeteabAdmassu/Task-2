@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+
+{% block title %}User Management — MeridianCare{% endblock %}
+
+{% block content %}
+<div class="card">
+    <div class="card-header">
+        <h2>User Management</h2>
+    </div>
+    <div class="table-responsive">
+        <table>
+            <thead>
+                <tr>
+                    <th>ID</th>
+                    <th>Username</th>
+                    <th>Role</th>
+                    <th>Status</th>
+                    <th>Created</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+            <tbody id="users-table-body">
+                {% for user in users %}
+                {% include "admin/_user_row.html" %}
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}

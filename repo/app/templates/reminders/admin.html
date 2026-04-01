@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+{% block title %}All Reminders - MeridianCare{% endblock %}
+
+{% block content %}
+<h1>All Reminders (Admin)</h1>
+
+<table class="table">
+    <thead>
+        <tr><th>Patient</th><th>Type</th><th>Message</th><th>Due Date</th><th>Status</th></tr>
+    </thead>
+    <tbody>
+        {% for r in reminders %}
+        <tr>
+            <td>{{ r.patient.username }}</td>
+            <td>{{ r.type | title }}</td>
+            <td>{{ r.message }}</td>
+            <td>{{ r.due_date.strftime('%Y-%m-%d') if r.due_date else '' }}</td>
+            <td>{{ r.status | title }}</td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% endblock %}

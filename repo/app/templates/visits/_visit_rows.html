@@ -1,0 +1,30 @@
+{% for visit in visits %}
+<tr class="visit-status-{{ visit.status }}">
+    <td>{{ visit.id }}</td>
+    <td>{{ visit.patient.username }}</td>
+    <td>{{ visit.clinician.user.username }}</td>
+    <td><span class="badge badge-{{ visit.status }}">{{ visit.status | replace('_', ' ') | title }}</span></td>
+    <td>{{ visit.created_at.strftime('%Y-%m-%d %H:%M') if visit.created_at else '' }}</td>
+    <td>
+        {% set allowed = valid_transitions.get(visit.status, []) %}
+        {% if allowed %}
+        {% for target in allowed %}
+        <form method="POST" action="{{ url_for('visits.transition', visit_id=visit.id) }}" style="display:inline;"
+              hx-post="{{ url_for('visits.transition', visit_id=visit.id) }}" hx-target="#visit-rows" hx-swap="innerHTML">
+            <input type="hidden" name="target_state" value="{{ target }}">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <button type="submit" class="btn btn-sm btn-{{ 'danger' if target in ('canceled', 'no_show') else 'primary' }}">
+                {{ target | replace('_', ' ') | title }}
+            </button>
+        </form>
+        {% endfor %}
+        {% endif %}
+        <button class="btn btn-sm btn-secondary"
+                hx-get="{{ url_for('visits.timeline', visit_id=visit.id) }}"
+                hx-target="#timeline-{{ visit.id }}" hx-swap="innerHTML">
+            Timeline
+        </button>
+        <div id="timeline-{{ visit.id }}"></div>
+    </td>
+</tr>
+{% endfor %}

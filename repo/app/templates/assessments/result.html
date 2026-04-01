@@ -1,0 +1,70 @@
+{% extends "base.html" %}
+
+{% block title %}Assessment Result — MeridianCare{% endblock %}
+
+{% block content %}
+<div class="card">
+    <div class="card-header">
+        <h2>Assessment Result</h2>
+    </div>
+
+    <div class="risk-badge risk-{{ assessment.risk_level | lower }}" style="text-align:center; padding:1.5rem; margin:1rem 0; border-radius:var(--radius);">
+        <h3 style="margin:0;">Overall Risk Level: {{ assessment.risk_level }}</h3>
+    </div>
+
+    <h3>Individual Scores</h3>
+    <div class="features-grid">
+        {% if scores.phq9 %}
+        <div class="feature-card">
+            <h4>PHQ-9 (Depression)</h4>
+            <p>Score: {{ scores.phq9.total }} / 27</p>
+            <p>Severity: {{ scores.phq9.severity }}</p>
+        </div>
+        {% endif %}
+        {% if scores.gad7 %}
+        <div class="feature-card">
+            <h4>GAD-7 (Anxiety)</h4>
+            <p>Score: {{ scores.gad7.total }} / 21</p>
+            <p>Severity: {{ scores.gad7.severity }}</p>
+        </div>
+        {% endif %}
+        {% if scores.blood_pressure %}
+        <div class="feature-card">
+            <h4>Blood Pressure</h4>
+            <p>Category: {{ scores.blood_pressure.category }}</p>
+        </div>
+        {% endif %}
+        {% if scores.fall_risk %}
+        <div class="feature-card">
+            <h4>Fall Risk</h4>
+            <p>Flags: {{ scores.fall_risk.flags }} / {{ scores.fall_risk.total_questions }}</p>
+        </div>
+        {% endif %}
+        {% if scores.medication_adherence %}
+        <div class="feature-card">
+            <h4>Medication Adherence</h4>
+            <p>{{ scores.medication_adherence.level | replace('_', ' ') | title }}</p>
+        </div>
+        {% endif %}
+    </div>
+
+    <details style="margin-top:1.5rem;">
+        <summary style="cursor:pointer; font-weight:600; color:var(--primary);">Why this rating?</summary>
+        <ul style="margin-top:0.5rem;">
+            {% for e in explanations %}
+            <li>{{ e }}</li>
+            {% endfor %}
+        </ul>
+    </details>
+
+    <p style="margin-top:1rem; color:var(--text-light); font-size:0.85rem;">
+        Submitted: {{ assessment.submitted_at.strftime('%Y-%m-%d %H:%M UTC') if assessment.submitted_at else '' }}
+    </p>
+</div>
+
+<style>
+    .risk-low { background: var(--success-light); color: var(--success); }
+    .risk-moderate { background: var(--warning-light); color: var(--warning); }
+    .risk-high { background: var(--danger-light); color: var(--danger); }
+</style>
+{% endblock %}

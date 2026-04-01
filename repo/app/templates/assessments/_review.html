@@ -1,0 +1,20 @@
+<h3>Review Your Answers</h3>
+<p class="field-hint">Please review before submitting. Assessments cannot be edited after submission.</p>
+
+{% for section in sections %}
+<div style="margin:1rem 0;">
+    <h4>{{ section.title }}</h4>
+    {% for q in section.questions %}
+    <p><strong>{{ q.text }}:</strong> {{ answers.get(q.id, '—') | replace('_', ' ') | title }}</p>
+    {% endfor %}
+</div>
+{% endfor %}
+
+<form hx-post="{{ url_for('assessments.submit') }}" hx-target="#assessment-content" hx-swap="innerHTML">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <input type="hidden" name="visit_id" value="{{ visit_id or '' }}">
+    <input type="hidden" name="request_token" value="{{ request_token }}">
+    <div style="display:flex; gap:1rem; margin-top:1.5rem;">
+        <button type="submit" class="btn btn-primary">Submit Assessment</button>
+    </div>
+</form>

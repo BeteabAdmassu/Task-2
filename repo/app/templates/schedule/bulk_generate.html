@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+{% block title %}Bulk Schedule Generation — MeridianCare{% endblock %}
+{% block content %}
+<div class="card">
+    <div class="card-header"><h2>Bulk Schedule Generation</h2></div>
+    <form method="POST">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <div class="form-group">
+            <label for="clinician_id">Clinician</label>
+            <select name="clinician_id" id="clinician_id" class="form-control" required>
+                <option value="">-- Select --</option>
+                {% for c in clinicians %}
+                <option value="{{ c.id }}">{{ c.user.username }} — {{ c.specialty or 'General' }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div class="form-group">
+            <label for="date_from">From Date</label>
+            <input type="date" id="date_from" name="date_from" class="form-control" required>
+        </div>
+        <div class="form-group">
+            <label for="date_to">To Date</label>
+            <input type="date" id="date_to" name="date_to" class="form-control" required>
+        </div>
+        <button type="submit" class="btn btn-primary">Generate Slots</button>
+    </form>
+</div>
+{% endblock %}

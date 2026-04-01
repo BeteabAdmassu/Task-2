@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+{% block title %}Staff Calendar — MeridianCare{% endblock %}
+{% block content %}
+<div class="card">
+    <div class="card-header">
+        <h2>Schedule: {{ week_start }} — {{ week_end }}</h2>
+        <div style="display:flex; gap:0.5rem;">
+            <a href="{{ url_for('schedule.staff_calendar', week=prev_week, clinician_id=selected_clinician or '') }}"
+               hx-get="{{ url_for('schedule.staff_calendar', week=prev_week, clinician_id=selected_clinician or '') }}"
+               hx-target="#main-content" hx-push-url="true"
+               class="btn btn-secondary">&laquo; Prev</a>
+            <a href="{{ url_for('schedule.staff_calendar', week=next_week, clinician_id=selected_clinician or '') }}"
+               hx-get="{{ url_for('schedule.staff_calendar', week=next_week, clinician_id=selected_clinician or '') }}"
+               hx-target="#main-content" hx-push-url="true"
+               class="btn btn-secondary">Next &raquo;</a>
+        </div>
+    </div>
+
+    {% if slots %}
+    <div class="table-responsive">
+        <table>
+            <thead><tr><th>Date</th><th>Time</th><th>Clinician</th><th>Status</th><th>Booked</th></tr></thead>
+            <tbody>
+            {% for s in slots %}
+            <tr style="{% if s.date in holiday_dates %}background:var(--border);{% endif %}">
+                <td>{{ s.date }}</td>
+                <td>{{ s.start_time.strftime('%H:%M') }}—{{ s.end_time.strftime('%H:%M') }}</td>
+                <td>{{ s.clinician.user.username }}</td>
+                <td><span class="badge badge-{{ 'success' if s.status == 'available' else ('warning' if s.status == 'holiday' else 'danger') }}">{{ s.status | title }}</span></td>
+                <td>{{ s.booked_count }}/{{ s.capacity }}</td>
+            </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+    <p>No slots for this week.</p>
+    {% endif %}
+</div>
+{% endblock %}

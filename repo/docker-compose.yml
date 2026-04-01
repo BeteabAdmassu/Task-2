@@ -1,0 +1,16 @@
+services:
+  web:
+    build: .
+    ports:
+      - "5000:5000"
+    environment:
+      - FLASK_ENV=production
+      - SEED_TEST_DATA=1
+    tmpfs:
+      - /app/data
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request, ssl; ctx = ssl.create_default_context(); ctx.check_hostname = False; ctx.verify_mode = ssl.CERT_NONE; urllib.request.urlopen('https://localhost:5000/health', context=ctx)"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
