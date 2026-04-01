@@ -10,12 +10,12 @@
 </div>
 {% endfor %}
 
-<form hx-post="{{ url_for('assessments.submit') }}" hx-target="#assessment-content" hx-swap="innerHTML">
+{% set _submit_action = url_for('assessments.submit') %}
+<form hx-post="{{ _submit_action }}" hx-target="#assessment-content" hx-swap="innerHTML">
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     <input type="hidden" name="visit_id" value="{{ visit_id or '' }}">
     <input type="hidden" name="request_token" value="{{ request_token }}">
-    <input type="hidden" name="_nonce" value="{{ generate_nonce() }}">
-    <input type="hidden" name="_timestamp" value="{{ generate_timestamp() }}">
+    {{ antireplay_inputs("POST", _submit_action) }}
     <div style="display:flex; gap:1rem; margin-top:1.5rem;">
         <button type="submit" class="btn btn-primary">Submit Assessment</button>
     </div>

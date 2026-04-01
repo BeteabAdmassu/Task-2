@@ -2,7 +2,7 @@
 
 Covers:
   - Visit authorization (patient cannot transition or view others' timelines)
-  - Anti-replay enforcement (missing/replayed nonce rejected)
+  - Anti-replay enforcement (missing/replayed nonce rejected, signature validation)
   - Open redirect prevention on login next parameter
   - Production config requires stable keys
 """
@@ -16,18 +16,12 @@ from app.models.user import User
 from app.models.scheduling import Clinician
 from app.models.visit import Visit
 from app.extensions import db as _db
+from tests.signing_helpers import signed_data
 
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
-
-def _nonce_data():
-    return {
-        "_nonce": str(uuid.uuid4()),
-        "_timestamp": datetime.now(timezone.utc).isoformat(),
-    }
-
 
 def _create_user(app, username, role="patient", password="Password1"):
     with app.app_context():
@@ -78,11 +72,12 @@ class TestVisitAuthorization:
         other_pat_id = _create_user(app, "pat_other1")
         attacker_id = _create_user(app, "pat_attacker1")
         vid = _create_visit(app, other_pat_id, cid)
+        path = f"/visits/{vid}/transition"
 
         _login(client, "pat_attacker1")
         resp = client.post(
-            f"/visits/{vid}/transition",
-            data={"target_state": "checked_in", **_nonce_data()},
+            path,
+            data=signed_data("POST", path, {"target_state": "checked_in"}),
         )
         assert resp.status_code == 403
 
@@ -108,16 +103,17 @@ class TestVisitAuthorization:
         assert resp.status_code == 200
 
     def test_staff_can_transition_visit(self, client, app, db):
-        """Staff role should succeed on transition when valid nonce provided."""
+        """Staff role should succeed on transition when valid signed request provided."""
         _, cid = _create_clinician(app, "doc_authz4")
         pat_id = _create_user(app, "pat_authz4")
         admin_id = _create_user(app, "admin_authz4", role="administrator")
         vid = _create_visit(app, pat_id, cid)
+        path = f"/visits/{vid}/transition"
 
         _login(client, "admin_authz4")
         resp = client.post(
-            f"/visits/{vid}/transition",
-            data={"target_state": "checked_in", **_nonce_data()},
+            path,
+            data=signed_data("POST", path, {"target_state": "checked_in"}),
             follow_redirects=True,
         )
         assert resp.status_code == 200
@@ -175,32 +171,71 @@ class TestAntiReplay:
         assert resp.status_code == 400
 
     def test_replayed_nonce_rejected(self, client, app, db):
-        """Reusing the same nonce on two requests must return 409 on the second."""
+        """Reusing the same nonce on the same path must return 409 on the second request."""
         _, cid = _create_clinician(app, "doc_ar4")
         pat_id = _create_user(app, "pat_ar4")
         admin_id = _create_user(app, "admin_ar4", role="administrator")
         vid = _create_visit(app, pat_id, cid)
+        path = f"/visits/{vid}/transition"
 
         _login(client, "admin_ar4")
-        nonce_payload = _nonce_data()
+        payload = signed_data("POST", path, {"target_state": "checked_in"})
 
-        # First request — should succeed
-        resp1 = client.post(
-            f"/visits/{vid}/transition",
-            data={"target_state": "checked_in", **nonce_payload},
-            follow_redirects=False,
-        )
+        # First request — should succeed (nonce is fresh)
+        resp1 = client.post(path, data=payload, follow_redirects=False)
         assert resp1.status_code != 409
 
-        # Replay the same nonce — second visit in state checked_in -> seen
-        # (we need a visit still in a transitionable state for the replay to be
-        # meaningful, but the important thing is the 409 nonce check fires first)
-        vid2 = _create_visit(app, pat_id, cid)
-        resp2 = client.post(
-            f"/visits/{vid2}/transition",
-            data={"target_state": "checked_in", **nonce_payload},
-        )
+        # Replay the exact same signed data — nonce already consumed → 409
+        resp2 = client.post(path, data=payload)
         assert resp2.status_code == 409
+
+    def test_missing_signature_returns_400(self, client, app, db):
+        """POST with nonce+timestamp but no signature must return 400."""
+        _, cid = _create_clinician(app, "doc_ar5")
+        pat_id = _create_user(app, "pat_ar5")
+        admin_id = _create_user(app, "admin_ar5", role="administrator")
+        vid = _create_visit(app, pat_id, cid)
+
+        _login(client, "admin_ar5")
+        resp = client.post(
+            f"/visits/{vid}/transition",
+            data={
+                "target_state": "checked_in",
+                "_nonce": str(uuid.uuid4()),
+                "_timestamp": datetime.now(timezone.utc).isoformat(),
+            },
+        )
+        assert resp.status_code == 400
+
+    def test_invalid_signature_returns_400(self, client, app, db):
+        """POST with a tampered signature must return 400."""
+        _, cid = _create_clinician(app, "doc_ar6")
+        pat_id = _create_user(app, "pat_ar6")
+        admin_id = _create_user(app, "admin_ar6", role="administrator")
+        vid = _create_visit(app, pat_id, cid)
+        path = f"/visits/{vid}/transition"
+
+        _login(client, "admin_ar6")
+        data = signed_data("POST", path, {"target_state": "checked_in"})
+        data["_signature"] = "deadbeef" * 8  # tampered — wrong HMAC
+        resp = client.post(path, data=data)
+        assert resp.status_code == 400
+
+    def test_valid_signature_passes(self, client, app, db):
+        """POST with a correct signature and fresh nonce must be accepted."""
+        _, cid = _create_clinician(app, "doc_ar7")
+        pat_id = _create_user(app, "pat_ar7")
+        admin_id = _create_user(app, "admin_ar7", role="administrator")
+        vid = _create_visit(app, pat_id, cid)
+        path = f"/visits/{vid}/transition"
+
+        _login(client, "admin_ar7")
+        resp = client.post(
+            path,
+            data=signed_data("POST", path, {"target_state": "checked_in"}),
+            follow_redirects=True,
+        )
+        assert resp.status_code == 200
 
 
 # ---------------------------------------------------------------------------
@@ -278,7 +313,7 @@ class TestProductionConfig:
         from app import create_app
 
         env_backup = {}
-        for key in ("SECRET_KEY", "ENCRYPTION_KEY"):
+        for key in ("SECRET_KEY", "ENCRYPTION_KEY", "REQUEST_SIGNING_SECRET"):
             env_backup[key] = os.environ.pop(key, None)
 
         try:
@@ -295,36 +330,61 @@ class TestProductionConfig:
         from cryptography.fernet import Fernet
 
         env_backup = {}
-        for key in ("SECRET_KEY", "ENCRYPTION_KEY"):
+        for key in ("SECRET_KEY", "ENCRYPTION_KEY", "REQUEST_SIGNING_SECRET"):
             env_backup[key] = os.environ.pop(key, None)
 
         os.environ["SECRET_KEY"] = "stable-test-secret-key-x1234567890"
+        os.environ["REQUEST_SIGNING_SECRET"] = "stable-test-signing-secret-x1234"
         try:
             with pytest.raises(RuntimeError, match="ENCRYPTION_KEY"):
                 create_app("production")
         finally:
             os.environ.pop("SECRET_KEY", None)
+            os.environ.pop("REQUEST_SIGNING_SECRET", None)
             for key, val in env_backup.items():
                 if val is not None:
                     os.environ[key] = val
 
-    def test_production_succeeds_with_both_keys(self):
-        """create_app('production') succeeds when both keys are supplied."""
+    def test_production_fails_without_signing_secret(self):
+        """create_app('production') raises RuntimeError when REQUEST_SIGNING_SECRET is absent."""
         from app import create_app
         from cryptography.fernet import Fernet
 
         env_backup = {}
-        for key in ("SECRET_KEY", "ENCRYPTION_KEY"):
+        for key in ("SECRET_KEY", "ENCRYPTION_KEY", "REQUEST_SIGNING_SECRET"):
             env_backup[key] = os.environ.pop(key, None)
 
         os.environ["SECRET_KEY"] = "stable-test-secret-key-x1234567890"
         os.environ["ENCRYPTION_KEY"] = Fernet.generate_key().decode()
+        try:
+            with pytest.raises(RuntimeError, match="REQUEST_SIGNING_SECRET"):
+                create_app("production")
+        finally:
+            os.environ.pop("SECRET_KEY", None)
+            os.environ.pop("ENCRYPTION_KEY", None)
+            for key, val in env_backup.items():
+                if val is not None:
+                    os.environ[key] = val
+
+    def test_production_succeeds_with_all_keys(self):
+        """create_app('production') succeeds when all required keys are supplied."""
+        from app import create_app
+        from cryptography.fernet import Fernet
+
+        env_backup = {}
+        for key in ("SECRET_KEY", "ENCRYPTION_KEY", "REQUEST_SIGNING_SECRET"):
+            env_backup[key] = os.environ.pop(key, None)
+
+        os.environ["SECRET_KEY"] = "stable-test-secret-key-x1234567890"
+        os.environ["ENCRYPTION_KEY"] = Fernet.generate_key().decode()
+        os.environ["REQUEST_SIGNING_SECRET"] = "stable-test-signing-secret-x1234"
         try:
             app = create_app("production")
             assert app is not None
         finally:
             os.environ.pop("SECRET_KEY", None)
             os.environ.pop("ENCRYPTION_KEY", None)
+            os.environ.pop("REQUEST_SIGNING_SECRET", None)
             for key, val in env_backup.items():
                 if val is not None:
                     os.environ[key] = val

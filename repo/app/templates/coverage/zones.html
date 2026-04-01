@@ -5,10 +5,10 @@
 <h1>Coverage Zones</h1>
 
 <h2>Create New Zone</h2>
-<form method="POST" action="{{ url_for('coverage.zones') }}">
+{% set _zones_post = url_for('coverage.create_zone') %}
+<form method="POST" action="{{ _zones_post }}">
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-    <input type="hidden" name="_nonce" value="{{ generate_nonce() }}">
-    <input type="hidden" name="_timestamp" value="{{ generate_timestamp() }}">
+    {{ antireplay_inputs("POST", _zones_post) }}
     <div class="form-group">
         <label for="name">Zone Name</label>
         <input type="text" id="name" name="name" required class="form-control">

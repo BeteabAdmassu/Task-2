@@ -25,16 +25,16 @@
         </script>
         {% endif %}
 
-        <form method="POST" style="margin-top:1rem;">
+        {% set _confirm_action = url_for('schedule.confirm', reservation_id=reservation.id) %}
+        <form method="POST" action="{{ _confirm_action }}" style="margin-top:1rem;">
             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-            <input type="hidden" name="_nonce" value="{{ generate_nonce() }}">
-            <input type="hidden" name="_timestamp" value="{{ generate_timestamp() }}">
+            {{ antireplay_inputs("POST", _confirm_action) }}
             <button type="submit" class="btn btn-primary btn-block">Confirm Booking</button>
         </form>
-        <form method="POST" action="{{ url_for('schedule.cancel', reservation_id=reservation.id) }}" style="margin-top:0.5rem;">
+        {% set _cancel_action = url_for('schedule.cancel', reservation_id=reservation.id) %}
+        <form method="POST" action="{{ _cancel_action }}" style="margin-top:0.5rem;">
             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-            <input type="hidden" name="_nonce" value="{{ generate_nonce() }}">
-            <input type="hidden" name="_timestamp" value="{{ generate_timestamp() }}">
+            {{ antireplay_inputs("POST", _cancel_action) }}
             <button type="submit" class="btn btn-secondary btn-block">Cancel</button>
         </form>
     </div>

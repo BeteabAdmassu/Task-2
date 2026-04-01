@@ -1,19 +1,11 @@
 """Tests for prompt 06 — scheduling."""
 
-import uuid
 import pytest
 from datetime import date, time, timedelta, datetime, timezone
 from app.models.user import User
 from app.models.scheduling import Clinician, ScheduleTemplate, Slot, Reservation, Holiday, Room, expire_stale_holds
 from app.extensions import db
-
-
-def _nonce_data():
-    """Return fresh nonce+timestamp form fields for antireplay-protected endpoints."""
-    return {
-        "_nonce": str(uuid.uuid4()),
-        "_timestamp": datetime.now(timezone.utc).isoformat(),
-    }
+from tests.signing_helpers import signed_data
 
 
 def _create_user(app, username, role="patient", password="Password1"):
@@ -76,7 +68,7 @@ def test_hold_slot(client, app):
     pid = _create_user(app, "pat_s2")
     _login(client, "pat_s2")
 
-    resp = client.post(f"/schedule/hold/{sid}", data=_nonce_data(), follow_redirects=True)
+    resp = client.post(f"/schedule/hold/{sid}", data=signed_data("POST", f"/schedule/hold/{sid}"), follow_redirects=True)
     assert resp.status_code == 200
     assert b"Confirm" in resp.data
 
@@ -91,11 +83,11 @@ def test_confirm_reservation(client, app):
     pid = _create_user(app, "pat_s3")
     _login(client, "pat_s3")
 
-    client.post(f"/schedule/hold/{sid}", data=_nonce_data())
+    client.post(f"/schedule/hold/{sid}", data=signed_data("POST", f"/schedule/hold/{sid}"))
 
     with app.app_context():
         r = Reservation.query.filter_by(slot_id=sid).first()
-        resp = client.post(f"/schedule/confirm/{r.id}", data=_nonce_data(), follow_redirects=True)
+        resp = client.post(f"/schedule/confirm/{r.id}", data=signed_data("POST", f"/schedule/confirm/{r.id}"), follow_redirects=True)
         assert resp.status_code == 200
 
     with app.app_context():
@@ -108,11 +100,11 @@ def test_cancel_reservation(client, app):
     pid = _create_user(app, "pat_s4")
     _login(client, "pat_s4")
 
-    client.post(f"/schedule/hold/{sid}", data=_nonce_data())
+    client.post(f"/schedule/hold/{sid}", data=signed_data("POST", f"/schedule/hold/{sid}"))
 
     with app.app_context():
         r = Reservation.query.filter_by(slot_id=sid).first()
-        resp = client.post(f"/schedule/cancel/{r.id}", data=_nonce_data(), follow_redirects=True)
+        resp = client.post(f"/schedule/cancel/{r.id}", data=signed_data("POST", f"/schedule/cancel/{r.id}"), follow_redirects=True)
         assert resp.status_code == 200
 
     with app.app_context():
@@ -141,7 +133,7 @@ def test_cannot_book_past_slot(client, app):
 
     _create_user(app, "pat_s5")
     _login(client, "pat_s5")
-    resp = client.post(f"/schedule/hold/{sid}", data=_nonce_data(), follow_redirects=True)
+    resp = client.post(f"/schedule/hold/{sid}", data=signed_data("POST", f"/schedule/hold/{sid}"), follow_redirects=True)
     assert b"past" in resp.data.lower()
 
 
@@ -171,9 +163,9 @@ def test_max_simultaneous_holds(client, app):
     _create_user(app, "pat_s6")
     _login(client, "pat_s6")
 
-    client.post(f"/schedule/hold/{slot_ids[0]}", data=_nonce_data())
-    client.post(f"/schedule/hold/{slot_ids[1]}", data=_nonce_data())
-    resp = client.post(f"/schedule/hold/{slot_ids[2]}", data=_nonce_data(), follow_redirects=True)
+    client.post(f"/schedule/hold/{slot_ids[0]}", data=signed_data("POST", f"/schedule/hold/{slot_ids[0]}"))
+    client.post(f"/schedule/hold/{slot_ids[1]}", data=signed_data("POST", f"/schedule/hold/{slot_ids[1]}"))
+    resp = client.post(f"/schedule/hold/{slot_ids[2]}", data=signed_data("POST", f"/schedule/hold/{slot_ids[2]}"), follow_redirects=True)
     assert b"only hold" in resp.data.lower()
 
 

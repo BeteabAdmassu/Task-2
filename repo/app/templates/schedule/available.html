@@ -36,10 +36,10 @@
                 <td>{{ s.start_time.strftime('%H:%M') }} — {{ s.end_time.strftime('%H:%M') }}</td>
                 <td>{{ s.clinician.user.username }}</td>
                 <td>
-                    <form method="POST" action="{{ url_for('schedule.hold', slot_id=s.id) }}" style="display:inline;">
+                    {% set _hold_action = url_for('schedule.hold', slot_id=s.id) %}
+                    <form method="POST" action="{{ _hold_action }}" style="display:inline;">
                         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                        <input type="hidden" name="_nonce" value="{{ generate_nonce() }}">
-                        <input type="hidden" name="_timestamp" value="{{ generate_timestamp() }}">
+                        {{ antireplay_inputs("POST", _hold_action) }}
                         <button type="submit" class="btn btn-primary" style="padding:0.25rem 0.75rem; font-size:0.85rem;">Hold</button>
                     </form>
                 </td>

@@ -19,10 +19,10 @@
                 <td><span class="badge badge-{{ 'primary' if r.status == 'confirmed' else 'warning' }}">{{ r.status | title }}</span></td>
                 <td>
                     {% if r.status in ('held', 'confirmed') %}
-                    <form method="POST" action="{{ url_for('schedule.cancel', reservation_id=r.id) }}" style="display:inline;">
+                    {% set _cancel_action = url_for('schedule.cancel', reservation_id=r.id) %}
+                    <form method="POST" action="{{ _cancel_action }}" style="display:inline;">
                         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                        <input type="hidden" name="_nonce" value="{{ generate_nonce() }}">
-                        <input type="hidden" name="_timestamp" value="{{ generate_timestamp() }}">
+                        {{ antireplay_inputs("POST", _cancel_action) }}
                         <button type="submit" class="btn btn-danger" style="padding:0.25rem 0.5rem; font-size:0.85rem;">Cancel</button>
                     </form>
                     {% endif %}

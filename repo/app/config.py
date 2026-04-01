@@ -15,6 +15,9 @@ class Config:
     SQLALCHEMY_TRACK_MODIFICATIONS = False
     WTF_CSRF_ENABLED = True
     ENCRYPTION_KEY = _DEFAULT_ENCRYPTION_KEY
+    # Dedicated HMAC key for request-signing (nonce/timestamp anti-replay).
+    # Separate from SECRET_KEY (session) and ENCRYPTION_KEY (field encryption).
+    REQUEST_SIGNING_SECRET = os.environ.get("REQUEST_SIGNING_SECRET", os.urandom(32).hex())
     DEBUG = False
     TESTING = False
 
@@ -27,13 +30,15 @@ class TestingConfig(Config):
     TESTING = True
     WTF_CSRF_ENABLED = False
     SQLALCHEMY_DATABASE_URI = "sqlite:///:memory:"
+    # Stable known value so tests can compute expected signatures.
+    REQUEST_SIGNING_SECRET = "test-request-signing-secret-dev-only"
 
 
 class ProductionConfig(Config):
     @staticmethod
     def validate():
         missing = [
-            name for name in ("SECRET_KEY", "ENCRYPTION_KEY")
+            name for name in ("SECRET_KEY", "ENCRYPTION_KEY", "REQUEST_SIGNING_SECRET")
             if not os.environ.get(name)
         ]
         if missing:

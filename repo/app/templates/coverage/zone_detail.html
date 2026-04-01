@@ -22,10 +22,10 @@
 </table>
 
 <h2>Assign Clinician</h2>
-<form method="POST" action="{{ url_for('coverage.assign_clinician', zone_id=zone.id) }}">
+{% set _assign_action = url_for('coverage.assign_clinician', zone_id=zone.id) %}
+<form method="POST" action="{{ _assign_action }}">
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-    <input type="hidden" name="_nonce" value="{{ generate_nonce() }}">
-    <input type="hidden" name="_timestamp" value="{{ generate_timestamp() }}">
+    {{ antireplay_inputs("POST", _assign_action) }}
     <div class="form-group">
         <label for="clinician_id">Clinician</label>
         <select id="clinician_id" name="clinician_id" class="form-control">

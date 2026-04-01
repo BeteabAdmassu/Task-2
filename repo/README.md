@@ -15,8 +15,9 @@ The following environment variables **must** be set when running with `FLASK_ENV
 |---|---|
 | `SECRET_KEY` | Stable secret key for Flask session signing (e.g. `python -c "import secrets; print(secrets.token_hex(32))"`) |
 | `ENCRYPTION_KEY` | Stable Fernet key for field-level encryption (e.g. `python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"`) |
+| `REQUEST_SIGNING_SECRET` | Stable HMAC secret used to sign anti-replay request fields (`_nonce`, `_timestamp`, `_signature` / `X-Signature`) (e.g. `python -c "import secrets; print(secrets.token_hex(32))"`) |
 
-The app will raise `RuntimeError` at startup if either is missing in production.
+The app will raise `RuntimeError` at startup if any of these are missing in production.
 In development and testing, random/default keys are generated automatically.
 
 ## Quick Start

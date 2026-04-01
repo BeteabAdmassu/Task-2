@@ -67,12 +67,41 @@ def create_app(config_name=None):
 
     @app.context_processor
     def inject_antireplay_helpers():
+        import hmac as _hmac
+        import hashlib as _hashlib
         from datetime import datetime, timezone as _tz
+        from markupsafe import Markup
+
+        def antireplay_inputs(method, path):
+            """Render three hidden fields: _nonce, _timestamp, _signature.
+
+            The signature is HMAC-SHA256 over 'METHOD|path|nonce|timestamp'
+            using REQUEST_SIGNING_SECRET.  All values are server-generated so
+            the secret never reaches the browser.
+            """
+            nonce = str(uuid.uuid4())
+            timestamp = datetime.now(_tz.utc).isoformat()
+            secret = app.config.get("REQUEST_SIGNING_SECRET", "")
+            payload = f"{method.upper()}|{path}|{nonce}|{timestamp}"
+            sig = _hmac.new(secret.encode(), payload.encode(), _hashlib.sha256).hexdigest()
+            return Markup(
+                f'<input type="hidden" name="_nonce" value="{nonce}">'
+                f'<input type="hidden" name="_timestamp" value="{timestamp}">'
+                f'<input type="hidden" name="_signature" value="{sig}">'
+            )
+
+        # Kept for any template that still calls them individually.
         def generate_nonce():
             return str(uuid.uuid4())
+
         def generate_timestamp():
             return datetime.now(_tz.utc).isoformat()
-        return dict(generate_nonce=generate_nonce, generate_timestamp=generate_timestamp)
+
+        return dict(
+            antireplay_inputs=antireplay_inputs,
+            generate_nonce=generate_nonce,
+            generate_timestamp=generate_timestamp,
+        )
 
     # Error handlers
     from flask import render_template, jsonify, request as flask_request

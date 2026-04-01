@@ -1,20 +1,13 @@
 """Tests for prompt 07 — Visit State Machine & Dashboard."""
 
-import uuid
 import pytest
-from datetime import date, time, timedelta, datetime, timezone
+from datetime import date, time, timedelta
 from app.models.user import User
 from app.models.scheduling import Clinician, Slot
 from app.models.visit import Visit, VisitTransition
 from app.utils.state_machine import transition_visit, VALID_TRANSITIONS, TERMINAL_STATES
 from app.extensions import db
-
-
-def _nonce_data():
-    return {
-        "_nonce": str(uuid.uuid4()),
-        "_timestamp": datetime.now(timezone.utc).isoformat(),
-    }
+from tests.signing_helpers import signed_data
 
 
 def _create_user(app, username, role="patient", password="Password1"):
@@ -122,7 +115,7 @@ def test_transition_endpoint(client, app, db):
     _login(client, "admin_v2")
     resp = client.post(
         f"/visits/{vid}/transition",
-        data={"target_state": "checked_in", **_nonce_data()},
+        data=signed_data("POST", f"/visits/{vid}/transition", {"target_state": "checked_in"}),
         follow_redirects=True,
     )
     assert resp.status_code == 200

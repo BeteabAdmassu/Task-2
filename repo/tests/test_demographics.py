@@ -1,19 +1,13 @@
 """Tests for prompt 04 — patient demographics."""
 
-import uuid
 import pytest
-from datetime import datetime, timezone
 from app.models.user import User
 from app.models.demographics import PatientDemographics, DemographicsChangeLog
 from app.extensions import db
 from app.utils.encryption import encrypt_value, decrypt_value, mask_id, reset_fernet
+from tests.signing_helpers import signed_data
 
-
-def _nonce_data():
-    return {
-        "_nonce": str(uuid.uuid4()),
-        "_timestamp": datetime.now(timezone.utc).isoformat(),
-    }
+_DEMO_PATH = "/patient/demographics"
 
 
 def _create_user(app, username, role="patient", password="Password1"):
@@ -61,7 +55,7 @@ def test_patient_can_view_demographics_page(client, app):
 def test_patient_can_create_demographics(client, app):
     _create_user(app, "pat2")
     _login(client, "pat2")
-    resp = client.post("/patient/demographics", data={**DEMO_DATA, **_nonce_data()}, follow_redirects=True)
+    resp = client.post("/patient/demographics", data=signed_data("POST", _DEMO_PATH, DEMO_DATA), follow_redirects=True)
     assert resp.status_code == 200
     with app.app_context():
         demo = PatientDemographics.query.filter_by(
@@ -75,12 +69,12 @@ def test_patient_can_create_demographics(client, app):
 def test_patient_can_update_demographics(client, app):
     _create_user(app, "pat3")
     _login(client, "pat3")
-    client.post("/patient/demographics", data={**DEMO_DATA, **_nonce_data()}, follow_redirects=True)
+    client.post("/patient/demographics", data=signed_data("POST", _DEMO_PATH, DEMO_DATA), follow_redirects=True)
 
     updated = dict(DEMO_DATA)
     updated["full_name"] = "John Updated"
     updated["version"] = "1"
-    client.post("/patient/demographics", data={**updated, **_nonce_data()}, follow_redirects=True)
+    client.post("/patient/demographics", data=signed_data("POST", _DEMO_PATH, updated), follow_redirects=True)
 
     with app.app_context():
         demo = PatientDemographics.query.filter_by(
@@ -92,7 +86,7 @@ def test_patient_can_update_demographics(client, app):
 def test_demographics_validation_required_fields(client, app):
     _create_user(app, "pat4")
     _login(client, "pat4")
-    resp = client.post("/patient/demographics", data={"full_name": "", "phone": "", **_nonce_data()})
+    resp = client.post("/patient/demographics", data=signed_data("POST", _DEMO_PATH, {"full_name": "", "phone": ""}))
     assert b"Full name is required" in resp.data
 
 
@@ -101,7 +95,7 @@ def test_demographics_future_dob_rejected(client, app):
     _login(client, "pat5")
     data = dict(DEMO_DATA)
     data["date_of_birth"] = "2099-01-01"
-    resp = client.post("/patient/demographics", data={**data, **_nonce_data()})
+    resp = client.post("/patient/demographics", data=signed_data("POST", _DEMO_PATH, data))
     assert b"future" in resp.data.lower()
 
 
@@ -110,14 +104,14 @@ def test_demographics_invalid_zip(client, app):
     _login(client, "pat6")
     data = dict(DEMO_DATA)
     data["address_zip"] = "BADZIP"
-    resp = client.post("/patient/demographics", data={**data, **_nonce_data()})
+    resp = client.post("/patient/demographics", data=signed_data("POST", _DEMO_PATH, data))
     assert b"ZIP" in resp.data
 
 
 def test_encryption_of_sensitive_fields(client, app):
     _create_user(app, "pat7")
     _login(client, "pat7")
-    client.post("/patient/demographics", data={**DEMO_DATA, **_nonce_data()}, follow_redirects=True)
+    client.post("/patient/demographics", data=signed_data("POST", _DEMO_PATH, DEMO_DATA), follow_redirects=True)
     with app.app_context():
         demo = PatientDemographics.query.filter_by(
             user_id=User.query.filter_by(username="pat7").first().id
@@ -137,7 +131,7 @@ def test_mask_id_function():
 def test_reveal_field(client, app):
     _create_user(app, "pat8")
     _login(client, "pat8")
-    client.post("/patient/demographics", data={**DEMO_DATA, **_nonce_data()}, follow_redirects=True)
+    client.post("/patient/demographics", data=signed_data("POST", _DEMO_PATH, DEMO_DATA), follow_redirects=True)
     resp = client.post("/patient/demographics/reveal", data={"field": "insurance_id"})
     assert resp.status_code == 200
     assert b"INS123456789" in resp.data
@@ -148,7 +142,7 @@ def test_staff_can_view_patient_demographics(client, app):
     _create_user(app, "fd1", role="front_desk")
     # Create demographics for patient first
     _login(client, "pat9")
-    client.post("/patient/demographics", data={**DEMO_DATA, **_nonce_data()}, follow_redirects=True)
+    client.post("/patient/demographics", data=signed_data("POST", _DEMO_PATH, DEMO_DATA), follow_redirects=True)
     client.post("/auth/logout")
 
     _login(client, "fd1")
@@ -161,7 +155,7 @@ def test_staff_front_desk_can_edit_patient_demographics(client, app):
     pid = _create_user(app, "pat10")
     _create_user(app, "fd2", role="front_desk")
     _login(client, "pat10")
-    client.post("/patient/demographics", data={**DEMO_DATA, **_nonce_data()}, follow_redirects=True)
+    client.post("/patient/demographics", data=signed_data("POST", _DEMO_PATH, DEMO_DATA), follow_redirects=True)
     client.post("/auth/logout")
 
     _login(client, "fd2")
@@ -179,7 +173,7 @@ def test_clinician_cannot_edit_demographics(client, app):
     pid = _create_user(app, "pat11")
     _create_user(app, "clin1", role="clinician")
     _login(client, "pat11")
-    client.post("/patient/demographics", data={**DEMO_DATA, **_nonce_data()}, follow_redirects=True)
+    client.post("/patient/demographics", data=signed_data("POST", _DEMO_PATH, DEMO_DATA), follow_redirects=True)
     client.post("/auth/logout")
 
     _login(client, "clin1")
@@ -203,12 +197,12 @@ def test_patient_list_page(client, app):
 def test_change_log_created(client, app):
     _create_user(app, "pat13")
     _login(client, "pat13")
-    client.post("/patient/demographics", data={**DEMO_DATA, **_nonce_data()}, follow_redirects=True)
+    client.post("/patient/demographics", data=signed_data("POST", _DEMO_PATH, DEMO_DATA), follow_redirects=True)
 
     updated = dict(DEMO_DATA)
     updated["full_name"] = "Changed Name"
     updated["version"] = "1"
-    client.post("/patient/demographics", data={**updated, **_nonce_data()}, follow_redirects=True)
+    client.post("/patient/demographics", data=signed_data("POST", _DEMO_PATH, updated), follow_redirects=True)
 
     with app.app_context():
         logs = DemographicsChangeLog.query.all()

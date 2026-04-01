@@ -5,10 +5,10 @@
 {% endif %}
 
 {% set d = data if data is defined and data else {} %}
-<form method="POST" action="{{ url_for('patient.demographics') }}">
+{% set _demo_action = url_for('patient.demographics') %}
+<form method="POST" action="{{ _demo_action }}">
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-    <input type="hidden" name="_nonce" value="{{ generate_nonce() }}">
-    <input type="hidden" name="_timestamp" value="{{ generate_timestamp() }}">
+    {{ antireplay_inputs("POST", _demo_action) }}
     {% if demo %}<input type="hidden" name="version" value="{{ demo.version }}">{% endif %}
 
     <h3>Personal Information</h3>

@@ -1,17 +1,9 @@
 """Tests for prompt 10 — Security & Privacy."""
 
-import uuid
 import pytest
-from datetime import datetime, timezone
 from app.models.user import User
 from app.extensions import db
-
-
-def _nonce_data():
-    return {
-        "_nonce": str(uuid.uuid4()),
-        "_timestamp": datetime.now(timezone.utc).isoformat(),
-    }
+from tests.signing_helpers import signed_data
 
 
 def _create_user(app, username, role="patient", password="Password1"):
@@ -58,12 +50,11 @@ def test_change_password_success(client, app, db):
     _login(client, "pat_sec2")
     resp = client.post(
         "/auth/change-password",
-        data={
+        data=signed_data("POST", "/auth/change-password", {
             "current_password": "Password1",
             "new_password": "NewPass1a",
             "confirm_password": "NewPass1a",
-            **_nonce_data(),
-        },
+        }),
         follow_redirects=True,
     )
     assert resp.status_code == 200
@@ -78,12 +69,11 @@ def test_change_password_wrong_current(client, app, db):
     _login(client, "pat_sec3")
     resp = client.post(
         "/auth/change-password",
-        data={
+        data=signed_data("POST", "/auth/change-password", {
             "current_password": "WrongPass1",
             "new_password": "NewPass1a",
             "confirm_password": "NewPass1a",
-            **_nonce_data(),
-        },
+        }),
         follow_redirects=True,
     )
     assert b"Current password is incorrect" in resp.data
@@ -94,12 +84,11 @@ def test_change_password_mismatch(client, app, db):
     _login(client, "pat_sec4")
     resp = client.post(
         "/auth/change-password",
-        data={
+        data=signed_data("POST", "/auth/change-password", {
             "current_password": "Password1",
             "new_password": "NewPass1a",
             "confirm_password": "Different1a",
-            **_nonce_data(),
-        },
+        }),
         follow_redirects=True,
     )
     assert b"do not match" in resp.data
@@ -110,12 +99,11 @@ def test_change_password_weak(client, app, db):
     _login(client, "pat_sec5")
     resp = client.post(
         "/auth/change-password",
-        data={
+        data=signed_data("POST", "/auth/change-password", {
             "current_password": "Password1",
             "new_password": "weak",
             "confirm_password": "weak",
-            **_nonce_data(),
-        },
+        }),
         follow_redirects=True,
     )
     assert b"at least 8 characters" in resp.data
@@ -157,7 +145,7 @@ def test_delete_account_requires_password(client, app, db):
     _login(client, "pat_del1")
     resp = client.post(
         "/patient/delete-account",
-        data={"password": "WrongPass1", **_nonce_data()},
+        data=signed_data("POST", "/patient/delete-account", {"password": "WrongPass1"}),
         follow_redirects=True,
     )
     assert b"Password is incorrect" in resp.data
@@ -172,7 +160,7 @@ def test_delete_account_anonymizes_user(client, app, db):
     _login(client, "pat_del2")
     resp = client.post(
         "/patient/delete-account",
-        data={"password": "Password1", **_nonce_data()},
+        data=signed_data("POST", "/patient/delete-account", {"password": "Password1"}),
         follow_redirects=True,
     )
     assert resp.status_code == 200

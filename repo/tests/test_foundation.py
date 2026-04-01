@@ -60,6 +60,7 @@ def test_app_factory_configs():
     from cryptography.fernet import Fernet
     os.environ.setdefault("SECRET_KEY", "stable-test-secret-key-1234567890ab")
     os.environ.setdefault("ENCRYPTION_KEY", Fernet.generate_key().decode())
+    os.environ.setdefault("REQUEST_SIGNING_SECRET", "stable-test-signing-secret-x1234")
     prod_app = create_app("production")
     assert prod_app.debug is False
     assert prod_app.testing is False
