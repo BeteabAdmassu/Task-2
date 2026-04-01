@@ -132,7 +132,8 @@ def test_reveal_field(client, app):
     _create_user(app, "pat8")
     _login(client, "pat8")
     client.post("/patient/demographics", data=signed_data("POST", _DEMO_PATH, DEMO_DATA), follow_redirects=True)
-    resp = client.post("/patient/demographics/reveal", data={"field": "insurance_id"})
+    _reveal_path = "/patient/demographics/reveal"
+    resp = client.post(_reveal_path, data=signed_data("POST", _reveal_path, {"field": "insurance_id"}))
     assert resp.status_code == 200
     assert b"INS123456789" in resp.data
 

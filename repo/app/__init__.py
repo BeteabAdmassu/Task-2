@@ -8,8 +8,12 @@ from app.utils.logging import setup_logging
 from app.utils.middleware import register_middleware
 
 
-def _start_reminder_scheduler(app):
-    """Start a background thread that runs reminder generation every 15 minutes.
+def _start_background_scheduler(app):
+    """Start a background thread with periodic maintenance jobs.
+
+    Jobs registered:
+    - hold_expiry        : expire stale reservation holds every 5 minutes.
+    - reminder_generation: generate pending reminders every 15 minutes.
 
     Guards:
     - Skipped entirely in testing mode.
@@ -21,25 +25,46 @@ def _start_reminder_scheduler(app):
         from apscheduler.schedulers.background import BackgroundScheduler
     except ImportError:
         app.logger.warning(
-            "APScheduler is not installed — background reminder generation disabled. "
+            "APScheduler is not installed — background jobs disabled. "
             "Run: pip install APScheduler>=3.10,<4.0"
         )
         return None
     from app.utils.reminders import generate_pending_reminders
+    from app.models.scheduling import expire_stale_holds
 
     scheduler = BackgroundScheduler(daemon=True)
 
-    def _job():
+    def _reminder_job():
         with app.app_context():
             try:
                 generate_pending_reminders()
             except Exception:
                 pass  # never let a DB error crash the scheduler thread
 
-    scheduler.add_job(_job, "interval", minutes=15, id="reminder_generation")
+    def _hold_expiry_job():
+        """Expire overdue reservation holds on a fixed schedule.
+
+        This is the authoritative expiry mechanism — holds expire regardless of
+        whether any user navigates to the schedule page (which only triggers the
+        lazy cleanup).  Running every 5 minutes ensures holds never linger more
+        than ~11 minutes past their 10-minute window (10 min hold + up to 1 min
+        until the next sweep).
+        """
+        with app.app_context():
+            try:
+                expire_stale_holds()
+            except Exception:
+                pass
+
+    scheduler.add_job(_hold_expiry_job, "interval", minutes=1, id="hold_expiry")
+    scheduler.add_job(_reminder_job, "interval", minutes=15, id="reminder_generation")
     scheduler.start()
     atexit.register(lambda: scheduler.shutdown(wait=False))
     return scheduler
+
+
+# Keep old name as alias so any external reference still works.
+_start_reminder_scheduler = _start_background_scheduler
 
 
 def create_app(config_name=None):
@@ -106,8 +131,14 @@ def create_app(config_name=None):
     def inject_antireplay_helpers():
         import hmac as _hmac
         import hashlib as _hashlib
+        import json as _json
         from datetime import datetime, timezone as _tz
         from markupsafe import Markup
+
+        def _build_sig(method, path, nonce, timestamp):
+            secret = app.config.get("REQUEST_SIGNING_SECRET", "")
+            payload = f"{method.upper()}|{path}|{nonce}|{timestamp}"
+            return _hmac.new(secret.encode(), payload.encode(), _hashlib.sha256).hexdigest()
 
         def antireplay_inputs(method, path):
             """Render three hidden fields: _nonce, _timestamp, _signature.
@@ -118,14 +149,28 @@ def create_app(config_name=None):
             """
             nonce = str(uuid.uuid4())
             timestamp = datetime.now(_tz.utc).isoformat()
-            secret = app.config.get("REQUEST_SIGNING_SECRET", "")
-            payload = f"{method.upper()}|{path}|{nonce}|{timestamp}"
-            sig = _hmac.new(secret.encode(), payload.encode(), _hashlib.sha256).hexdigest()
+            sig = _build_sig(method, path, nonce, timestamp)
             return Markup(
                 f'<input type="hidden" name="_nonce" value="{nonce}">'
                 f'<input type="hidden" name="_timestamp" value="{timestamp}">'
                 f'<input type="hidden" name="_signature" value="{sig}">'
             )
+
+        def antireplay_headers(method, path):
+            """Return a JSON string suitable for HTMX hx-headers containing
+            X-Nonce, X-Timestamp, and X-Signature for the given endpoint.
+
+            Usage in templates:
+                hx-headers='{{ antireplay_headers("POST", url_for("...")) }}'
+            """
+            nonce = str(uuid.uuid4())
+            timestamp = datetime.now(_tz.utc).isoformat()
+            sig = _build_sig(method, path, nonce, timestamp)
+            return Markup(_json.dumps({
+                "X-Nonce": nonce,
+                "X-Timestamp": timestamp,
+                "X-Signature": sig,
+            }))
 
         # Kept for any template that still calls them individually.
         def generate_nonce():
@@ -136,6 +181,7 @@ def create_app(config_name=None):
 
         return dict(
             antireplay_inputs=antireplay_inputs,
+            antireplay_headers=antireplay_headers,
             generate_nonce=generate_nonce,
             generate_timestamp=generate_timestamp,
         )
@@ -160,11 +206,11 @@ def create_app(config_name=None):
         from app import models  # noqa: F401
         db.create_all()
 
-    # Start in-process reminder scheduler (skipped in testing and in the
+    # Start in-process background scheduler (skipped in testing and in the
     # Werkzeug reloader monitor process to avoid duplicate jobs).
     if not app.testing:
         from werkzeug.serving import is_running_from_reloader
         if not app.debug or is_running_from_reloader():
-            _start_reminder_scheduler(app)
+            _start_background_scheduler(app)
 
     return app

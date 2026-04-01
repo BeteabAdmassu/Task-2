@@ -9,6 +9,9 @@ class CoverageZone(db.Model):
     name = db.Column(db.String(100), nullable=False, unique=True)
     description = db.Column(db.String(500), nullable=True)
     zip_codes_json = db.Column(db.JSON, nullable=False, default=list)
+    # Optional list of neighborhood names for grouping alongside ZIP codes.
+    # A None/empty list means neighborhood matching is not configured for this zone.
+    neighborhoods_json = db.Column(db.JSON, nullable=True, default=list)
     is_active = db.Column(db.Boolean, nullable=False, default=True)
     distance_band_min = db.Column(db.Float, nullable=True, default=0)
     distance_band_max = db.Column(db.Float, nullable=True, default=0)

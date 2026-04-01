@@ -8,6 +8,7 @@ from app.models.visit import Visit
 from app.utils.scoring import calculate_scores, calculate_risk_level, get_or_create_default_template
 from app.utils.auth import role_required
 from app.utils.antireplay import antireplay
+from app.utils.idempotency import hash_token as _hash_token
 
 assessments_bp = Blueprint("assessments", __name__, url_prefix="/assessments")
 
@@ -126,9 +127,10 @@ def submit():
             flash("Invalid visit: access denied.", "danger")
             return redirect(url_for("assessments.start"))
 
-    # Idempotency check
+    # Idempotency check — compare against stored hash, not raw token.
     if request_token:
-        existing = AssessmentResult.query.filter_by(request_token=request_token).first()
+        token_hash = _hash_token(request_token)
+        existing = AssessmentResult.query.filter_by(request_token=token_hash).first()
         if existing:
             return redirect(url_for("assessments.result", assessment_id=existing.id))
 
@@ -156,7 +158,8 @@ def submit():
         scores_json=json.dumps(scores),
         risk_level=risk_level,
         explanation_snapshot_json=json.dumps(explanations),
-        request_token=request_token or None,
+        # Store SHA-256 hash of token — raw value never persisted.
+        request_token=_hash_token(request_token) if request_token else None,
     )
     db.session.add(result)
     db.session.delete(draft)

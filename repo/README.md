@@ -101,6 +101,69 @@ This script will:
 6. Tear down the Docker container
 7. Exit with code 0 on success, non-zero on failure
 
+## Token-at-Rest Protection
+
+All request/idempotency tokens are stored as **SHA-256 hex digests** — the raw client-supplied value is never written to the database or application logs.
+
+| Column | Model | Storage |
+|---|---|---|
+| `AssessmentResult.request_token` | `app/models/assessment.py` | SHA-256 hash of the submitted token |
+| `Reservation.request_token` | `app/models/scheduling.py` | SHA-256 hash of the submitted token |
+| `RequestToken.token` | `app/models/idempotency.py` | SHA-256 hash (via `app/utils/idempotency.py`) |
+| Anti-replay nonces (`SignedRequest.nonce`) | `app/models/audit.py` | SHA-256 hash (via `app/utils/antireplay.py`) |
+
+Idempotency lookups hash the incoming token before querying, so duplicate-detection still works correctly without exposing the raw value.
+
+## Time-Driven Hold Expiry
+
+Reservation holds (10-minute window) are expired by **two complementary mechanisms**:
+
+1. **Scheduled job** (`hold_expiry`, every 1 min) — runs inside the APScheduler background thread started by `create_app()`. Holds are expired on a fixed cadence regardless of user traffic. This is the authoritative mechanism. With a 10-minute hold window and a 1-minute sweep, a hold can remain active for at most ~11 minutes — one sweep interval beyond its nominal expiry.
+2. **Lazy cleanup** (`schedule_bp.before_request`) — `expire_stale_holds()` is also called on every request to the schedule blueprint. This provides immediate cleanup for active users but is not relied upon alone.
+
+The scheduler is skipped in `testing` mode. Tests that need to verify time-driven expiry call `expire_stale_holds()` directly to simulate a scheduler firing.
+
+```python
+# Verify fixes without Docker:
+python -m pytest tests/ --ignore=tests/e2e/ -v
+# Targeted token-at-rest tests:
+python -m pytest tests/test_assessments.py tests/test_scheduling.py -k "hash" -v
+# Targeted expiry tests:
+python -m pytest tests/test_scheduling.py -k "expiry" -v
+# User-switch isolation:
+python -m pytest tests/test_user_isolation.py -v
+```
+
+## Account Deletion & Anonymization
+
+When a patient submits `POST /patient/delete-account` with a correct password and valid anti-replay token, the following happens:
+
+### What is anonymized
+
+| Record | Action |
+|---|---|
+| `users` row | `username` → `deleted_<id>`, `is_active` → `False` |
+| `patient_demographics` | `full_name` → "Deleted User"; `phone` → placeholder "0000000"; `date_of_birth` → epoch placeholder 1900-01-01; all other PII fields cleared |
+| `demographics_change_log` | `old_value` and `new_value` set to `NULL`; timestamp and field name retained |
+| `clinical_notes` (patient's notes) | `content_encrypted` replaced with encrypted placeholder "[content removed - account deleted]"; record structure (author, timestamp, visit link) retained |
+| `assessment_drafts` | Deleted entirely (incomplete submissions, no legal hold) |
+| `login_attempts` | `username` field set to `NULL` for all attempts using the original username |
+
+### What is retained for legal/audit reasons
+
+- **`audit_logs`** — never modified; all audit entries are preserved indefinitely
+- **`assessment_results`** — record and scores retained; `patient_id` FK points to the now-deactivated anonymized user row
+- **`visits`** — appointment records retained; `patient_id` FK preserved for operational/audit queries
+- **`reservations`** — booking records retained; `patient_id` FK preserved
+- **`demographics_change_log`** — log entries retained (with PII values scrubbed); timestamps and field names preserved
+
+### Limits and boundaries
+
+- The deleted account cannot be reactivated or logged into (enforced by `is_active=False` and username replacement)
+- Clinical note records authored by clinicians are not deleted — only the encrypted content is replaced with a placeholder. Record structure is preserved for the clinician's practice audit trail.
+- Staff-authored clinical note content is fully replaced; the note's link to the visit and the authoring clinician is kept.
+- No schema migrations are required — the anonymization operates entirely at the data level within existing columns.
+
 ## Security & Audit Features
 
 ### Encrypted Clinical Notes

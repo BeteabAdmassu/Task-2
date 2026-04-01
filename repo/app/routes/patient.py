@@ -4,11 +4,17 @@ from flask import Blueprint, render_template, request, redirect, url_for, flash,
 from flask_login import login_required, current_user, logout_user
 from app.extensions import db
 from app.models.demographics import PatientDemographics, DemographicsChangeLog
-from app.models.assessment import AssessmentResult
+from app.models.assessment import AssessmentResult, AssessmentDraft
 from app.models.scheduling import Reservation, Slot
+from app.models.clinical_note import ClinicalNote
+from app.models.user import LoginAttempt
 from app.utils.encryption import encrypt_value, decrypt_value, mask_id, mask_encrypted_id
 from app.utils.auth import role_required
 from app.utils.antireplay import antireplay
+
+# Placeholder written to clinical note content after account deletion.
+# Computed once at import time so a single ciphertext is reused per request.
+_DELETED_NOTE_PLACEHOLDER = "[content removed - account deleted]"
 
 patient_bp = Blueprint("patient", __name__, url_prefix="/patient")
 
@@ -172,6 +178,7 @@ def demographics():
 
 @patient_bp.route("/demographics/reveal", methods=["POST"])
 @login_required
+@antireplay
 def reveal_field():
     if current_user.role != "patient":
         return jsonify({"error": "Access denied"}), 403
@@ -251,13 +258,16 @@ def delete_account():
         return redirect(url_for("patient.demographics"))
 
     user = current_user._get_current_object()
+    original_username = user.username  # capture before renaming
 
-    # Anonymize demographics
+    # --- Anonymize demographics ---
     demo = PatientDemographics.query.filter_by(user_id=user.id).first()
     if demo:
         demo.full_name = "Deleted User"
-        demo.phone = None
-        demo.date_of_birth = None
+        # phone and date_of_birth are NOT NULL in the schema; use safe
+        # placeholder values rather than None to satisfy the constraint.
+        demo.phone = "0000000"
+        demo.date_of_birth = date(1900, 1, 1)
         demo.gender = None
         demo.address_street = None
         demo.address_city = None
@@ -269,8 +279,41 @@ def delete_account():
         demo.insurance_id_encrypted = None
         demo.government_id_encrypted = None
 
-    # Anonymize user
-    user.full_name = "Deleted User" if hasattr(user, "full_name") else None
+        # Scrub PII values stored in the demographics change log for this patient.
+        # Timestamps and field names are retained for audit completeness.
+        # Use no_autoflush to prevent SQLAlchemy from flushing the in-progress
+        # demo changes (which include NOT-NULL placeholders) before we commit.
+        with db.session.no_autoflush:
+            DemographicsChangeLog.query.filter_by(demographics_id=demo.id).update(
+                {"old_value": None, "new_value": None},
+                synchronize_session=False,
+            )
+
+    # --- Anonymize clinical notes written about this patient ---
+    # Replace encrypted content with an encrypted placeholder so the record
+    # structure (author, timestamp, visit linkage) is preserved for audit but
+    # the note body no longer reveals patient identity.
+    placeholder_ciphertext = encrypt_value(_DELETED_NOTE_PLACEHOLDER)
+    for note in ClinicalNote.query.filter_by(patient_id=user.id).all():
+        note.content_encrypted = placeholder_ciphertext
+
+    # --- Remove incomplete assessment drafts (no legal-hold value) ---
+    AssessmentDraft.query.filter_by(patient_id=user.id).delete(
+        synchronize_session=False
+    )
+
+    # --- Clear username from login attempt records ---
+    # LoginAttempt stores username as a plain string; scrub it so the
+    # original login name is not discoverable from the attempt history.
+    LoginAttempt.query.filter_by(username=original_username).update(
+        {"username": None},
+        synchronize_session=False,
+    )
+
+    # --- Anonymize user account ---
+    # AssessmentResult, Visit, and Reservation rows retain their patient_id FK
+    # so operational and audit queries remain functional, but the referenced user
+    # row is now deactivated and carries no PII beyond the surrogate ID.
     user.username = f"deleted_{user.id}"
     user.is_active = False
 

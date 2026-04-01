@@ -90,6 +90,9 @@ def create_zone():
 
     zip_codes = [z.strip() for z in zip_codes_raw.split(",") if z.strip()]
 
+    neighborhoods_raw = request.form.get("neighborhoods", "").strip()
+    neighborhoods = [n.strip() for n in neighborhoods_raw.split(",") if n.strip()]
+
     existing = CoverageZone.query.filter_by(name=name).first()
     if existing:
         flash("A zone with this name already exists.", "danger")
@@ -99,6 +102,7 @@ def create_zone():
         name=name,
         description=description,
         zip_codes_json=zip_codes,
+        neighborhoods_json=neighborhoods,
         distance_band_min=distance_band_min,
         distance_band_max=distance_band_max,
         min_order_amount=min_order_amount,
@@ -257,29 +261,78 @@ def update_window(zone_id, window_id):
 
 @coverage_bp.route("/check")
 def check_coverage():
+    """Check coverage for a given ZIP code, optional neighborhood, and optional distance.
+
+    Query parameters:
+      zip          – ZIP code string (required unless neighborhood is supplied)
+      neighborhood – neighborhood name string (optional, alternative/additional to zip)
+      distance     – non-negative float in miles from clinic (optional)
+
+    Distance band logic:
+      A zone whose distance_band_max > 0 will only be returned when the caller
+      provides a `distance` value that falls within [distance_band_min, distance_band_max].
+      Zones with distance_band_max == 0 (or null) have no distance constraint.
+
+    Returns HTTP 400 for missing location identifiers or a non-numeric distance value.
+    """
     zip_code = request.args.get("zip", "").strip()
-    if not zip_code:
-        return jsonify({"covered": False, "message": "No ZIP code provided"}), 400
+    neighborhood = request.args.get("neighborhood", "").strip()
+    distance_str = request.args.get("distance", "").strip()
+
+    # Require at least one location identifier.
+    if not zip_code and not neighborhood:
+        return jsonify({"covered": False, "error": "zip or neighborhood is required"}), 400
+
+    # Validate and parse distance if provided.
+    distance = None
+    if distance_str:
+        try:
+            distance = float(distance_str)
+        except ValueError:
+            return jsonify({"covered": False, "error": "distance must be a number"}), 400
+        if distance < 0:
+            return jsonify({"covered": False, "error": "distance must be non-negative"}), 400
 
     zones = CoverageZone.query.filter_by(is_active=True).all()
     matching = []
     for zone in zones:
         zips = zone.zip_codes_json or []
-        if zip_code in zips:
-            windows = []
-            for w in zone.delivery_windows.all():
-                windows.append({
-                    "day_of_week": w.day_of_week,
-                    "start_time": w.start_time.strftime("%H:%M") if w.start_time else None,
-                    "end_time": w.end_time.strftime("%H:%M") if w.end_time else None,
-                })
-            matching.append({
-                "id": zone.id,
-                "name": zone.name,
-                "delivery_fee": zone.delivery_fee,
-                "min_order_amount": zone.min_order_amount,
-                "delivery_windows": windows,
+        neighborhoods = zone.neighborhoods_json or []
+
+        # Location check: ZIP or neighborhood must match at least one configured value.
+        zip_match = bool(zip_code) and zip_code in zips
+        nbhd_match = bool(neighborhood) and neighborhood in neighborhoods
+
+        if not zip_match and not nbhd_match:
+            continue
+
+        # Distance band check: only applied when the zone has a configured max band.
+        band_max = zone.distance_band_max or 0
+        if band_max > 0:
+            if distance is None:
+                # Zone requires a distance but caller did not provide one — skip.
+                continue
+            band_min = zone.distance_band_min or 0
+            if not (band_min <= distance <= band_max):
+                continue
+
+        windows = []
+        for w in zone.delivery_windows.all():
+            windows.append({
+                "day_of_week": w.day_of_week,
+                "start_time": w.start_time.strftime("%H:%M") if w.start_time else None,
+                "end_time": w.end_time.strftime("%H:%M") if w.end_time else None,
             })
+
+        matching.append({
+            "id": zone.id,
+            "name": zone.name,
+            "delivery_fee": zone.delivery_fee,
+            "min_order_amount": zone.min_order_amount,
+            "distance_band_min": zone.distance_band_min,
+            "distance_band_max": zone.distance_band_max,
+            "delivery_windows": windows,
+        })
 
     if matching:
         return jsonify({"covered": True, "zones": matching})

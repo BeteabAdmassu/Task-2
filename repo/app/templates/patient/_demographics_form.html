@@ -80,10 +80,13 @@
     <div class="form-group">
         <label for="insurance_id">Insurance ID</label>
         {% if demo and demo.insurance_id_encrypted %}
+        {% set _reveal_url = url_for('patient.reveal_field') %}
         <div style="display:flex; gap:0.5rem; align-items:center; margin-bottom:0.25rem;">
             <span id="insurance-masked">{{ mask_encrypted_id(demo.insurance_id_encrypted) }}</span>
             <button type="button" class="btn btn-secondary" style="padding:0.2rem 0.5rem; font-size:0.8rem;"
-                    hx-post="{{ url_for('patient.reveal_field') }}" hx-vals='{"field":"insurance_id"}'
+                    hx-post="{{ _reveal_url }}"
+                    hx-vals='{"field":"insurance_id"}'
+                    hx-headers='{{ antireplay_headers("POST", _reveal_url) }}'
                     hx-target="#insurance-masked" hx-swap="innerHTML">Show</button>
         </div>
         {% endif %}
@@ -94,10 +97,13 @@
     <div class="form-group">
         <label for="government_id">Government ID (optional)</label>
         {% if demo and demo.government_id_encrypted %}
+        {% set _reveal_url = url_for('patient.reveal_field') %}
         <div style="display:flex; gap:0.5rem; align-items:center; margin-bottom:0.25rem;">
             <span id="govid-masked">{{ mask_encrypted_id(demo.government_id_encrypted) }}</span>
             <button type="button" class="btn btn-secondary" style="padding:0.2rem 0.5rem; font-size:0.8rem;"
-                    hx-post="{{ url_for('patient.reveal_field') }}" hx-vals='{"field":"government_id"}'
+                    hx-post="{{ _reveal_url }}"
+                    hx-vals='{"field":"government_id"}'
+                    hx-headers='{{ antireplay_headers("POST", _reveal_url) }}'
                     hx-target="#govid-masked" hx-swap="innerHTML">Show</button>
         </div>
         {% endif %}

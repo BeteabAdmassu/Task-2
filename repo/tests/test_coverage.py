@@ -520,3 +520,164 @@ def test_update_delivery_window_overlap_rejected(client, app, db):
     with app.app_context():
         unchanged = db.session.get(ZoneDeliveryWindow, w2id)
         assert unchanged.start_time == dt_time(13, 0)  # unchanged
+
+
+# ---------------------------------------------------------------------------
+# Distance band and neighborhood matching
+# ---------------------------------------------------------------------------
+
+def _make_zone_with_band(app, name, zips, band_min, band_max, neighborhoods=None):
+    """Create a zone with distance band settings and return its id."""
+    with app.app_context():
+        zone = CoverageZone(
+            name=name,
+            zip_codes_json=zips,
+            neighborhoods_json=neighborhoods or [],
+            is_active=True,
+            distance_band_min=band_min,
+            distance_band_max=band_max,
+        )
+        db.session.add(zone)
+        db.session.commit()
+        return zone.id
+
+
+def test_check_coverage_distance_within_band(client, app, db):
+    """ZIP + distance within band → covered."""
+    _make_zone_with_band(app, "BandZone1", ["11001"], 0.0, 10.0)
+    resp = client.get("/coverage/check?zip=11001&distance=5.0")
+    assert resp.status_code == 200
+    data = resp.get_json()
+    assert data["covered"] is True
+    assert data["zones"][0]["distance_band_max"] == 10.0
+
+
+def test_check_coverage_distance_at_band_boundary(client, app, db):
+    """Distance exactly at band_max is included (inclusive upper bound)."""
+    _make_zone_with_band(app, "BandZone2", ["11002"], 0.0, 10.0)
+    resp = client.get("/coverage/check?zip=11002&distance=10.0")
+    assert resp.status_code == 200
+    assert resp.get_json()["covered"] is True
+
+
+def test_check_coverage_distance_outside_band(client, app, db):
+    """Distance beyond band_max → not covered even if ZIP matches."""
+    _make_zone_with_band(app, "BandZone3", ["11003"], 0.0, 10.0)
+    resp = client.get("/coverage/check?zip=11003&distance=15.0")
+    assert resp.status_code == 200
+    assert resp.get_json()["covered"] is False
+
+
+def test_check_coverage_distance_below_band_min(client, app, db):
+    """Distance below band_min → not covered."""
+    _make_zone_with_band(app, "BandZone4", ["11004"], 5.0, 20.0)
+    resp = client.get("/coverage/check?zip=11004&distance=2.0")
+    assert resp.status_code == 200
+    assert resp.get_json()["covered"] is False
+
+
+def test_check_coverage_band_zone_no_distance_provided(client, app, db):
+    """Zone with distance band configured but no distance param → not covered."""
+    _make_zone_with_band(app, "BandZone5", ["11005"], 0.0, 10.0)
+    resp = client.get("/coverage/check?zip=11005")
+    assert resp.status_code == 200
+    assert resp.get_json()["covered"] is False
+
+
+def test_check_coverage_no_band_without_distance(client, app, db):
+    """Zone with distance_band_max=0 (no constraint) → covered without distance."""
+    with app.app_context():
+        zone = CoverageZone(
+            name="NoBandZone", zip_codes_json=["11006"], is_active=True,
+            distance_band_min=0.0, distance_band_max=0.0,
+        )
+        db.session.add(zone)
+        db.session.commit()
+    resp = client.get("/coverage/check?zip=11006")
+    assert resp.status_code == 200
+    assert resp.get_json()["covered"] is True
+
+
+def test_check_coverage_invalid_distance(client, app, db):
+    """Non-numeric distance value → 400."""
+    resp = client.get("/coverage/check?zip=11007&distance=far")
+    assert resp.status_code == 400
+    data = resp.get_json()
+    assert "distance" in data.get("error", "").lower()
+
+
+def test_check_coverage_negative_distance(client, app, db):
+    """Negative distance → 400."""
+    resp = client.get("/coverage/check?zip=11008&distance=-1")
+    assert resp.status_code == 400
+
+
+def test_check_coverage_neighborhood_match(client, app, db):
+    """Neighborhood match (without ZIP) → covered."""
+    with app.app_context():
+        zone = CoverageZone(
+            name="NbhdZone1",
+            zip_codes_json=[],
+            neighborhoods_json=["Riverside"],
+            is_active=True,
+        )
+        db.session.add(zone)
+        db.session.commit()
+    resp = client.get("/coverage/check?neighborhood=Riverside")
+    assert resp.status_code == 200
+    assert resp.get_json()["covered"] is True
+
+
+def test_check_coverage_neighborhood_no_match(client, app, db):
+    """Neighborhood not in zone → not covered."""
+    with app.app_context():
+        zone = CoverageZone(
+            name="NbhdZone2",
+            zip_codes_json=[],
+            neighborhoods_json=["Riverside"],
+            is_active=True,
+        )
+        db.session.add(zone)
+        db.session.commit()
+    resp = client.get("/coverage/check?neighborhood=Downtown")
+    assert resp.status_code == 200
+    assert resp.get_json()["covered"] is False
+
+
+def test_check_coverage_neighborhood_with_distance_band(client, app, db):
+    """Neighborhood match + distance within band → covered."""
+    with app.app_context():
+        zone = CoverageZone(
+            name="NbhdBandZone",
+            zip_codes_json=[],
+            neighborhoods_json=["Eastside"],
+            is_active=True,
+            distance_band_min=0.0,
+            distance_band_max=8.0,
+        )
+        db.session.add(zone)
+        db.session.commit()
+    resp = client.get("/coverage/check?neighborhood=Eastside&distance=6.0")
+    assert resp.status_code == 200
+    assert resp.get_json()["covered"] is True
+
+
+def test_check_coverage_no_location_identifier(client, app, db):
+    """Neither zip nor neighborhood → 400 with clear error."""
+    resp = client.get("/coverage/check")
+    assert resp.status_code == 400
+    data = resp.get_json()
+    assert "error" in data
+    assert "zip" in data["error"].lower() or "neighborhood" in data["error"].lower()
+
+
+def test_check_coverage_response_includes_band_fields(client, app, db):
+    """Successful match includes distance_band_min and distance_band_max in response."""
+    _make_zone_with_band(app, "BandFieldZone", ["11099"], 2.0, 15.0)
+    resp = client.get("/coverage/check?zip=11099&distance=10.0")
+    assert resp.status_code == 200
+    data = resp.get_json()
+    assert data["covered"] is True
+    z = data["zones"][0]
+    assert z["distance_band_min"] == 2.0
+    assert z["distance_band_max"] == 15.0

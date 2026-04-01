@@ -168,3 +168,106 @@ def test_delete_account_anonymizes_user(client, app, db):
         user = db.session.get(User, uid)
         assert user.username == f"deleted_{uid}"
         assert user.is_active is False
+
+
+# ---------------------------------------------------------------------------
+# Reveal endpoint anti-replay tests
+# ---------------------------------------------------------------------------
+
+def _create_demographics_with_ids(app, user_id):
+    """Store encrypted insurance and government IDs for a user."""
+    from app.models.demographics import PatientDemographics
+    from app.utils.encryption import encrypt_value
+    from datetime import date
+    with app.app_context():
+        demo = PatientDemographics(
+            user_id=user_id,
+            full_name="Test Patient",
+            phone="555-1111",
+            date_of_birth=date(1990, 1, 1),
+            insurance_id_encrypted=encrypt_value("INS-12345"),
+            government_id_encrypted=encrypt_value("GOV-67890"),
+        )
+        db.session.add(demo)
+        db.session.commit()
+
+
+def test_reveal_requires_antireplay(client, app, db):
+    """POST /patient/demographics/reveal without signed fields must return 400."""
+    uid = _create_user(app, "pat_rev1")
+    _create_demographics_with_ids(app, uid)
+    _login(client, "pat_rev1")
+    resp = client.post(
+        "/patient/demographics/reveal",
+        data={"field": "insurance_id"},
+    )
+    assert resp.status_code == 400
+
+
+def test_reveal_rejects_invalid_signature(client, app, db):
+    """POST with nonce/timestamp but wrong signature must return 400."""
+    import uuid as _uuid
+    from datetime import datetime, timezone
+    uid = _create_user(app, "pat_rev2")
+    _create_demographics_with_ids(app, uid)
+    _login(client, "pat_rev2")
+    resp = client.post(
+        "/patient/demographics/reveal",
+        data={
+            "field": "insurance_id",
+            "_nonce": str(_uuid.uuid4()),
+            "_timestamp": datetime.now(timezone.utc).isoformat(),
+            "_signature": "deadbeef" * 8,
+        },
+    )
+    assert resp.status_code == 400
+
+
+def test_reveal_succeeds_with_valid_antireplay(client, app, db):
+    """POST with valid signed fields returns the decrypted value."""
+    uid = _create_user(app, "pat_rev3")
+    _create_demographics_with_ids(app, uid)
+    _login(client, "pat_rev3")
+    path = "/patient/demographics/reveal"
+    resp = client.post(
+        path,
+        data=signed_data("POST", path, {"field": "insurance_id"}),
+    )
+    assert resp.status_code == 200
+    assert b"INS-12345" in resp.data
+
+
+def test_reveal_government_id_succeeds(client, app, db):
+    """Reveal government_id with valid anti-replay returns decrypted value."""
+    uid = _create_user(app, "pat_rev4")
+    _create_demographics_with_ids(app, uid)
+    _login(client, "pat_rev4")
+    path = "/patient/demographics/reveal"
+    resp = client.post(
+        path,
+        data=signed_data("POST", path, {"field": "government_id"}),
+    )
+    assert resp.status_code == 200
+    assert b"GOV-67890" in resp.data
+
+
+def test_reveal_requires_authentication(client, app, db):
+    """Unauthenticated requests must not reveal data."""
+    resp = client.post(
+        "/patient/demographics/reveal",
+        data={"field": "insurance_id"},
+    )
+    assert resp.status_code in (302, 400, 401)
+
+
+def test_reveal_replay_rejected(client, app, db):
+    """Replaying the same nonce must be rejected with 409."""
+    uid = _create_user(app, "pat_rev5")
+    _create_demographics_with_ids(app, uid)
+    _login(client, "pat_rev5")
+    path = "/patient/demographics/reveal"
+    payload = signed_data("POST", path, {"field": "insurance_id"})
+    resp1 = client.post(path, data=payload)
+    assert resp1.status_code == 200
+    resp2 = client.post(path, data=payload)
+    assert resp2.status_code == 409

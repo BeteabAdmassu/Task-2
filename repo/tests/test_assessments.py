@@ -169,7 +169,10 @@ def test_assessment_idempotency(client, app):
     assert resp.status_code == 200
 
     with app.app_context():
-        count = AssessmentResult.query.filter_by(request_token="tok-idem").count()
+        # Token is stored hashed — query by patient to verify only one result.
+        import hashlib
+        token_hash = hashlib.sha256("tok-idem".encode()).hexdigest()
+        count = AssessmentResult.query.filter_by(request_token=token_hash).count()
         assert count == 1
 
 
@@ -317,3 +320,73 @@ def test_submit_accepts_own_visit(client, app):
     )
     assert resp.status_code == 200
     assert b"Invalid visit" not in resp.data
+
+
+# ---------------------------------------------------------------------------
+# Token-at-rest protection tests
+# ---------------------------------------------------------------------------
+
+def test_assessment_request_token_stored_hashed(client, app):
+    """AssessmentResult.request_token must be SHA-256 hash of the raw token."""
+    import hashlib
+    _create_user(app, "pat_tok_hash")
+    _login(client, "pat_tok_hash")
+    client.get("/assessments/start")
+
+    raw_token = "plaintext-token-should-not-appear-in-db"
+    all_data = dict(LOW_RISK_ANSWERS)
+    all_data["request_token"] = raw_token
+    for step in range(1, 6):
+        client.post(f"/assessments/step/{step}", data=all_data)
+
+    client.post(
+        _SUBMIT_PATH,
+        data=signed_data("POST", _SUBMIT_PATH, {"request_token": raw_token}),
+        follow_redirects=True,
+    )
+
+    with app.app_context():
+        result = AssessmentResult.query.filter_by(
+            patient_id=User.query.filter_by(username="pat_tok_hash").first().id
+        ).first()
+        assert result is not None
+        # Raw value must NOT be stored.
+        assert result.request_token != raw_token
+        # Must match the SHA-256 hex digest.
+        expected = hashlib.sha256(raw_token.encode()).hexdigest()
+        assert result.request_token == expected
+
+
+def test_assessment_idempotency_still_works_with_hashed_token(client, app):
+    """Duplicate submissions with the same token return the same result after hashing."""
+    import hashlib
+    _create_user(app, "pat_tok_idem2")
+    _login(client, "pat_tok_idem2")
+    client.get("/assessments/start")
+
+    raw_token = "idempotency-test-token-xyz"
+    all_data = dict(LOW_RISK_ANSWERS)
+    all_data["request_token"] = raw_token
+    for step in range(1, 6):
+        client.post(f"/assessments/step/{step}", data=all_data)
+
+    # First submit — creates the result.
+    resp1 = client.post(
+        _SUBMIT_PATH,
+        data=signed_data("POST", _SUBMIT_PATH, {"request_token": raw_token}),
+        follow_redirects=True,
+    )
+    assert resp1.status_code == 200
+
+    # Second submit — must be idempotent (redirects to same result, no new row).
+    resp2 = client.post(
+        _SUBMIT_PATH,
+        data=signed_data("POST", _SUBMIT_PATH, {"request_token": raw_token}),
+        follow_redirects=True,
+    )
+    assert resp2.status_code == 200
+
+    with app.app_context():
+        token_hash = hashlib.sha256(raw_token.encode()).hexdigest()
+        count = AssessmentResult.query.filter_by(request_token=token_hash).count()
+        assert count == 1  # exactly one result despite two submits

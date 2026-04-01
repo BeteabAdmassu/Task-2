@@ -12,6 +12,10 @@ def _hash_token(token: str) -> str:
     return hashlib.sha256(token.encode()).hexdigest()
 
 
+# Public alias used by routes that persist their own token columns.
+hash_token = _hash_token
+
+
 def check_idempotency(token, user_id=None):
     """Return cached result dict if token exists and hasn't expired, else None."""
     if not token:

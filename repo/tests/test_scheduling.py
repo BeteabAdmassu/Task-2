@@ -356,3 +356,108 @@ def test_confirm_visit_idempotent_no_duplicate(client, app):
     with app.app_context():
         count_after = Visit.query.filter_by(slot_id=sid, patient_id=pid).count()
         assert count_after == 1  # still only one
+
+
+# ---------------------------------------------------------------------------
+# Token-at-rest and time-driven hold expiry tests
+# ---------------------------------------------------------------------------
+
+def test_reservation_request_token_stored_hashed(client, app):
+    """Reservation.request_token must be stored as SHA-256 hash, not raw."""
+    import hashlib
+    pid, cid, sid = _create_clinician_with_slot(app, username="doc_hash1")
+    pid = _create_user(app, "pat_hash1")
+    _login(client, "pat_hash1")
+
+    raw_token = "my-raw-hold-token-abc123"
+    path = f"/schedule/hold/{sid}"
+    resp = client.post(
+        path,
+        data=signed_data("POST", path, {"request_token": raw_token}),
+        follow_redirects=False,
+    )
+    assert resp.status_code == 302  # redirect to confirm page
+
+    with app.app_context():
+        res = Reservation.query.filter_by(patient_id=pid).first()
+        assert res is not None
+        # Raw token must NOT appear in DB.
+        assert res.request_token != raw_token
+        # Stored value must be the SHA-256 hex digest of the raw token.
+        expected_hash = hashlib.sha256(raw_token.encode()).hexdigest()
+        assert res.request_token == expected_hash
+
+
+def test_reservation_token_none_when_not_provided(client, app):
+    """If no request_token is submitted, Reservation.request_token is None."""
+    pid, cid, sid = _create_clinician_with_slot(app, username="doc_hash2")
+    pid = _create_user(app, "pat_hash2")
+    _login(client, "pat_hash2")
+
+    path = f"/schedule/hold/{sid}"
+    resp = client.post(
+        path,
+        data=signed_data("POST", path),  # no request_token field
+        follow_redirects=False,
+    )
+    assert resp.status_code == 302
+
+    with app.app_context():
+        res = Reservation.query.filter_by(patient_id=pid).first()
+        assert res is not None
+        assert res.request_token is None
+
+
+def test_hold_expiry_time_driven_without_route(app):
+    """expire_stale_holds() expires overdue holds without any HTTP request."""
+    pid, cid, sid = _create_clinician_with_slot(app, username="doc_exp_td")
+    pid = _create_user(app, "pat_exp_td")
+
+    with app.app_context():
+        # Create a reservation that is already past its expiry.
+        res = Reservation(
+            slot_id=sid,
+            patient_id=pid,
+            status="held",
+            held_at=datetime.now(timezone.utc) - timedelta(hours=1),
+            expires_at=datetime.now(timezone.utc) - timedelta(minutes=30),
+        )
+        db.session.add(res)
+        db.session.commit()
+        res_id = res.id
+
+    # Call expire_stale_holds() directly — simulating the scheduler job,
+    # with no HTTP request to any schedule route.
+    with app.app_context():
+        expired_count = expire_stale_holds()
+
+    with app.app_context():
+        res = db.session.get(Reservation, res_id)
+        assert res.status == "expired", "Hold should be expired by direct scheduler call"
+        assert expired_count >= 1
+
+
+def test_hold_expiry_leaves_active_holds(app):
+    """expire_stale_holds() does not expire holds that are still within their window."""
+    pid, cid, sid = _create_clinician_with_slot(app, username="doc_exp_active")
+    pid = _create_user(app, "pat_exp_active")
+
+    with app.app_context():
+        # Reservation with expiry 30 minutes in the future — should not be expired.
+        res = Reservation(
+            slot_id=sid,
+            patient_id=pid,
+            status="held",
+            held_at=datetime.now(timezone.utc),
+            expires_at=datetime.now(timezone.utc) + timedelta(minutes=30),
+        )
+        db.session.add(res)
+        db.session.commit()
+        res_id = res.id
+
+    with app.app_context():
+        expire_stale_holds()
+
+    with app.app_context():
+        res = db.session.get(Reservation, res_id)
+        assert res.status == "held", "Active hold must not be prematurely expired"

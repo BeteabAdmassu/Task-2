@@ -8,6 +8,7 @@ from app.models.scheduling import (
 from app.models.visit import Visit
 from app.utils.auth import role_required
 from app.utils.antireplay import antireplay
+from app.utils.idempotency import hash_token as _hash_token
 
 schedule_bp = Blueprint("schedule", __name__, url_prefix="/schedule")
 
@@ -102,13 +103,15 @@ def hold(slot_id):
         flash(f"You can only hold up to {MAX_SIMULTANEOUS_HOLDS} slots at a time.", "warning")
         return redirect(url_for("schedule.available"))
 
+    raw_token = request.form.get("request_token")
     reservation = Reservation(
         slot_id=slot.id,
         patient_id=current_user.id,
         status="held",
         held_at=datetime.now(timezone.utc),
         expires_at=datetime.now(timezone.utc) + HOLD_DURATION,
-        request_token=request.form.get("request_token"),
+        # Store SHA-256 hash of token — raw value never persisted.
+        request_token=_hash_token(raw_token) if raw_token else None,
     )
     db.session.add(reservation)
     db.session.commit()
