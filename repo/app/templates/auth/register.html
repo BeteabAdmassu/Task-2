@@ -9,7 +9,7 @@
         <div id="register-form-container">
             {% include "auth/_register_form.html" %}
         </div>
-        <p class="auth-link">Already have an account? <a href="{{ url_for('auth.login') }}" hx-get="{{ url_for('auth.login') }}" hx-target="#main-content" hx-push-url="true">Log in</a></p>
+        <p class="auth-link">Already have an account? <a href="{{ url_for('auth.login') }}" hx-get="{{ url_for('auth.login') }}" hx-target="#main-content" hx-select="#main-content" hx-push-url="true">Log in</a></p>
     </div>
 </div>
 {% endblock %}
