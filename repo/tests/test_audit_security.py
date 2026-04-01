@@ -548,14 +548,15 @@ def test_bulk_generate_skips_room_conflict_slots(client, app, db):
         db.session.commit()
         cid = clin.id
 
+    path = "/schedule/admin/bulk-generate"
     resp = client.post(
-        "/schedule/admin/bulk-generate",
-        data={
+        path,
+        data=signed_data("POST", path, {
             "clinician_id": cid,
             "date_from": "2099-07-07",
             "date_to": "2099-07-07",
             "room_id": rid,
-        },
+        }),
         follow_redirects=True,
     )
     assert resp.status_code == 200
@@ -567,3 +568,239 @@ def test_bulk_generate_skips_room_conflict_slots(client, app, db):
             date=date(2099, 7, 7),
         ).all()
         assert len(new_slots) == 0
+
+
+# ---------------------------------------------------------------------------
+# Anti-replay: holidays POST and bulk-generate POST (new coverage)
+# ---------------------------------------------------------------------------
+
+def test_add_holiday_requires_antireplay(client, app, db):
+    """POST /schedule/admin/holidays without signed fields returns 400."""
+    _create_user(app, "admin_hol1", role="administrator")
+    _login(client, "admin_hol1")
+    resp = client.post(
+        "/schedule/admin/holidays",
+        data={"date": "2099-03-15", "name": "TestHoliday"},
+        follow_redirects=False,
+    )
+    assert resp.status_code == 400
+
+
+def test_add_holiday_succeeds_with_antireplay(client, app, db):
+    """POST /schedule/admin/holidays with signed fields creates the holiday."""
+    from app.models.scheduling import Holiday
+    _create_user(app, "admin_hol2", role="administrator")
+    _login(client, "admin_hol2")
+    path = "/schedule/admin/holidays"
+    resp = client.post(
+        path,
+        data=signed_data("POST", path, {"date": "2099-04-01", "name": "AntiReplayHoliday"}),
+        follow_redirects=True,
+    )
+    assert resp.status_code == 200
+    with app.app_context():
+        from datetime import date as _date
+        h = Holiday.query.filter_by(date=_date(2099, 4, 1)).first()
+        assert h is not None
+        assert h.name == "AntiReplayHoliday"
+
+
+def test_bulk_generate_requires_antireplay(client, app, db):
+    """POST /schedule/admin/bulk-generate without signed fields returns 400."""
+    _create_user(app, "admin_bg2", role="administrator")
+    _login(client, "admin_bg2")
+    resp = client.post(
+        "/schedule/admin/bulk-generate",
+        data={"clinician_id": "1", "date_from": "2099-01-01", "date_to": "2099-01-07"},
+        follow_redirects=False,
+    )
+    assert resp.status_code == 400
+
+
+def test_dismiss_reminder_requires_antireplay(client, app, db):
+    """POST /reminders/<id>/dismiss without signed fields returns 400."""
+    from app.models.reminder import Reminder
+    from datetime import date as _date
+    pat_id = _create_user(app, "pat_dis1", role="patient")
+    _login(client, "pat_dis1")
+    with app.app_context():
+        r = Reminder(
+            patient_id=pat_id,
+            type="reassessment",
+            message="Time for reassessment",
+            due_date=_date(2099, 1, 1),
+            status="pending",
+        )
+        db.session.add(r)
+        db.session.commit()
+        rid = r.id
+    resp = client.post(
+        f"/reminders/{rid}/dismiss",
+        data={},
+        follow_redirects=False,
+    )
+    assert resp.status_code == 400
+
+
+def test_dismiss_reminder_succeeds_with_antireplay(client, app, db):
+    """POST /reminders/<id>/dismiss with signed fields dismisses the reminder."""
+    from app.models.reminder import Reminder
+    from datetime import date as _date
+    pat_id = _create_user(app, "pat_dis2", role="patient")
+    _login(client, "pat_dis2")
+    with app.app_context():
+        r = Reminder(
+            patient_id=pat_id,
+            type="reassessment",
+            message="Time for reassessment",
+            due_date=_date(2099, 1, 1),
+            status="pending",
+        )
+        db.session.add(r)
+        db.session.commit()
+        rid = r.id
+    path = f"/reminders/{rid}/dismiss"
+    resp = client.post(
+        path,
+        data=signed_data("POST", path),
+        follow_redirects=True,
+    )
+    assert resp.status_code == 200
+    with app.app_context():
+        r = db.session.get(Reminder, rid)
+        assert r.status == "dismissed"
+
+
+# ---------------------------------------------------------------------------
+# New-device / new-IP anomaly alerts
+# ---------------------------------------------------------------------------
+
+def _make_login_attempt(username, ip, ua, success=True):
+    """Create a LoginAttempt record directly (no HTTP round-trip needed)."""
+    from app.models.user import LoginAttempt
+    attempt = LoginAttempt(
+        username=username, ip_address=ip,
+        user_agent=ua[:500] if ua else None, success=success,
+    )
+    db.session.add(attempt)
+    db.session.commit()
+    return attempt.id
+
+
+def test_new_ip_alert_created_on_login(client, app, db):
+    """check_new_device_alert creates a new_ip alert when IP hasn't been seen before."""
+    from app.models.audit import AnomalyAlert
+    from app.utils.audit import check_new_device_alert
+    username = "alert_ip_user1"
+    uid = _create_user(app, username, role="patient")
+    with app.app_context():
+        # Simulate two prior successful logins — second one has a new IP
+        _make_login_attempt(username, "10.0.0.1", "Browser/1.0")
+        _make_login_attempt(username, "192.168.99.1", "Browser/1.0")
+        check_new_device_alert(uid, username, "192.168.99.1", "Browser/1.0")
+        alert = AnomalyAlert.query.filter(
+            AnomalyAlert.alert_type == "new_ip",
+            AnomalyAlert.message.contains(f"user={username}"),
+            AnomalyAlert.message.contains("192.168.99.1"),
+        ).first()
+        assert alert is not None
+        assert alert.severity == "warning"
+
+
+def test_new_device_alert_created_on_login(client, app, db):
+    """check_new_device_alert creates a new_device alert when UA hasn't been seen before."""
+    from app.models.audit import AnomalyAlert
+    from app.utils.audit import check_new_device_alert
+    username = "alert_dev_user1"
+    uid = _create_user(app, username, role="patient")
+    with app.app_context():
+        _make_login_attempt(username, "10.0.0.1", "Chrome/100")
+        _make_login_attempt(username, "10.0.0.1", "Firefox/99")
+        check_new_device_alert(uid, username, "10.0.0.1", "Firefox/99")
+        alert = AnomalyAlert.query.filter(
+            AnomalyAlert.alert_type == "new_device",
+            AnomalyAlert.message.contains(f"user={username}"),
+        ).first()
+        assert alert is not None
+        assert alert.severity == "info"
+
+
+def test_no_alert_on_first_login(client, app, db):
+    """No alert when a user has only one prior successful login (first-ever session)."""
+    from app.models.audit import AnomalyAlert
+    from app.utils.audit import check_new_device_alert
+    username = "first_login_user"
+    uid = _create_user(app, username, role="patient")
+    with app.app_context():
+        _make_login_attempt(username, "10.1.2.3", "SomeAgent/1.0")
+        check_new_device_alert(uid, username, "10.1.2.3", "SomeAgent/1.0")
+        alerts = AnomalyAlert.query.filter(
+            AnomalyAlert.message.contains(f"user={username}"),
+        ).all()
+        assert len(alerts) == 0
+
+
+def test_no_alert_on_known_ip_and_device(client, app, db):
+    """No alert when IP and UA match a prior successful login."""
+    from app.models.audit import AnomalyAlert
+    from app.utils.audit import check_new_device_alert
+    username = "repeat_login_user"
+    uid = _create_user(app, username, role="patient")
+    with app.app_context():
+        _make_login_attempt(username, "10.5.5.5", "KnownBrowser/2.0")
+        _make_login_attempt(username, "10.5.5.5", "KnownBrowser/2.0")
+        check_new_device_alert(uid, username, "10.5.5.5", "KnownBrowser/2.0")
+        count = AnomalyAlert.query.filter(
+            AnomalyAlert.message.contains(f"user={username}"),
+        ).count()
+        assert count == 0
+
+
+def test_new_ip_alert_deduplication(client, app, db):
+    """Calling check_new_device_alert twice for the same new IP only creates one alert."""
+    from app.models.audit import AnomalyAlert
+    from app.utils.audit import check_new_device_alert
+    username = "dedup_ip_user"
+    uid = _create_user(app, username, role="patient")
+    new_ip = "172.16.0.1"
+    with app.app_context():
+        _make_login_attempt(username, "10.0.0.1", "BrowserA/1")
+        _make_login_attempt(username, new_ip, "BrowserA/1")
+        # Call twice (simulating two rapid logins from the same new IP)
+        check_new_device_alert(uid, username, new_ip, "BrowserA/1")
+        check_new_device_alert(uid, username, new_ip, "BrowserA/1")
+        count = AnomalyAlert.query.filter(
+            AnomalyAlert.alert_type == "new_ip",
+            AnomalyAlert.message.contains(f"user={username}"),
+            AnomalyAlert.message.contains(new_ip),
+        ).count()
+        assert count == 1  # deduplicated — only one alert
+
+
+# ---------------------------------------------------------------------------
+# Health detailed gated to administrators
+# ---------------------------------------------------------------------------
+
+def test_health_detailed_requires_auth(client, app, db):
+    """/health/detailed must not be accessible without authentication."""
+    resp = client.get("/health/detailed")
+    assert resp.status_code in (302, 401, 403)
+
+
+def test_health_detailed_accessible_to_admin(client, app, db):
+    """/health/detailed must be accessible to administrators."""
+    _create_user(app, "admin_health1", role="administrator")
+    _login(client, "admin_health1")
+    resp = client.get("/health/detailed")
+    assert resp.status_code == 200
+    data = resp.get_json()
+    assert data["status"] == "ok"
+    assert "database" in data
+
+
+def test_health_detailed_forbidden_for_patient(client, app, db):
+    """/health/detailed must not be accessible to patients."""
+    _create_user(app, "patient_health1", role="patient")
+    _login(client, "patient_health1")
+    resp = client.get("/health/detailed")
+    assert resp.status_code in (302, 403)

@@ -1,9 +1,12 @@
+import json
 from datetime import datetime, timezone, timedelta
 from flask import request, has_request_context
 from flask_login import current_user
 from app.extensions import db
 from app.models.audit import AuditLog, AnomalyAlert
 from app.models.user import LoginAttempt
+
+_NEW_DEVICE_COOLDOWN = timedelta(hours=24)
 
 
 def log_action(action, resource_type, resource_id=None, details=None):
@@ -30,6 +33,75 @@ def log_action(action, resource_type, resource_id=None, details=None):
     db.session.add(entry)
     db.session.commit()
     return entry
+
+
+def check_new_device_alert(user_id, username, ip, ua):
+    """Create AnomalyAlert when a user logs in from a new IP or new device.
+
+    A new IP/device is one not seen in any prior successful login for this user.
+    Alerts are deduplicated within a 24-hour cooldown window per user+IP and
+    user+device to prevent alert fatigue.  Called after _record_attempt so the
+    current login is already persisted — we exclude the most-recent record.
+    """
+    try:
+        # All successful logins for this username, oldest-first.
+        # The last entry is the one just recorded (current login).
+        all_ok = (
+            LoginAttempt.query
+            .filter_by(username=username, success=True)
+            .order_by(LoginAttempt.attempted_at.asc())
+            .all()
+        )
+        # If this is the very first login there are no prior sessions to compare.
+        if len(all_ok) <= 1:
+            return
+
+        prior = all_ok[:-1]  # everything before the current login
+        known_ips = {a.ip_address for a in prior if a.ip_address}
+        known_uas = {a.user_agent for a in prior if a.user_agent}
+
+        now = datetime.now(timezone.utc)
+        cooldown_start = now - _NEW_DEVICE_COOLDOWN
+
+        # ── New IP ──────────────────────────────────────────────────────────
+        if ip and ip not in known_ips:
+            already_alerted = AnomalyAlert.query.filter(
+                AnomalyAlert.alert_type == "new_ip",
+                AnomalyAlert.created_at >= cooldown_start,
+                AnomalyAlert.message.contains(f"user={username}"),
+                AnomalyAlert.message.contains(f"ip={ip}"),
+            ).first()
+            if not already_alerted:
+                db.session.add(AnomalyAlert(
+                    alert_type="new_ip",
+                    severity="warning",
+                    message=f"New IP login: user={username}, ip={ip}",
+                    details_json=json.dumps({
+                        "user_id": user_id, "username": username, "ip": ip,
+                    }),
+                ))
+
+        # ── New device (user-agent) ──────────────────────────────────────────
+        if ua and ua not in known_uas:
+            already_alerted = AnomalyAlert.query.filter(
+                AnomalyAlert.alert_type == "new_device",
+                AnomalyAlert.created_at >= cooldown_start,
+                AnomalyAlert.message.contains(f"user={username}"),
+            ).first()
+            if not already_alerted:
+                ua_short = ua[:120]
+                db.session.add(AnomalyAlert(
+                    alert_type="new_device",
+                    severity="info",
+                    message=f"New device login: user={username}, ua={ua_short}",
+                    details_json=json.dumps({
+                        "user_id": user_id, "username": username, "user_agent": ua[:200],
+                    }),
+                ))
+
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
 
 
 def anomaly_detection():

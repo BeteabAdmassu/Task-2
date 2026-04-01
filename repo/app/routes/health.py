@@ -1,6 +1,8 @@
 from datetime import datetime, timezone
 from flask import Blueprint, jsonify
+from flask_login import login_required
 from app.extensions import csrf, db
+from app.utils.auth import role_required
 
 health_bp = Blueprint("health", __name__)
 
@@ -17,7 +19,7 @@ def health_check():
 
 
 @health_bp.route("/health/detailed")
-@csrf.exempt
+@role_required("administrator")
 def health_detailed():
     # Check database connectivity
     try:

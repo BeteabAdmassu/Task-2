@@ -264,6 +264,7 @@ def staff_calendar():
 # ── Admin: holidays ──
 @schedule_bp.route("/admin/holidays", methods=["GET", "POST"])
 @role_required("administrator")
+@antireplay
 def holidays():
     if request.method == "POST":
         holiday_date = request.form.get("date", "").strip()
@@ -305,6 +306,7 @@ def delete_holiday(holiday_id):
 # ── Admin: bulk generate ──
 @schedule_bp.route("/admin/bulk-generate", methods=["GET", "POST"])
 @role_required("administrator")
+@antireplay
 def bulk_generate():
     clinicians = Clinician.query.all()
 

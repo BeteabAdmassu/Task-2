@@ -26,6 +26,7 @@ def my_reminders():
 
 @reminders_bp.route("/<int:reminder_id>/dismiss", methods=["POST"])
 @login_required
+@antireplay
 def dismiss(reminder_id):
     reminder = db.session.get(Reminder, reminder_id)
     if not reminder:

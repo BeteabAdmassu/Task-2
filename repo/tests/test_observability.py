@@ -62,6 +62,9 @@ def test_observability_table_counts(client, app, db):
 
 
 def test_health_detailed_returns_json(client, app, db):
+    # /health/detailed is now gated to administrators
+    _create_user(app, "admin_hd1", role="administrator")
+    _login(client, "admin_hd1")
     resp = client.get("/health/detailed")
     assert resp.status_code == 200
     data = resp.get_json()
@@ -73,15 +76,15 @@ def test_health_detailed_returns_json(client, app, db):
     assert "users" in data["tables"]
 
 
-def test_health_detailed_no_auth_required(client, app, db):
-    # Should be accessible without login
+def test_health_detailed_requires_auth(client, app, db):
+    # Unauthenticated requests must be rejected (not publicly accessible)
     resp = client.get("/health/detailed")
-    assert resp.status_code == 200
+    assert resp.status_code in (302, 401, 403)
 
 
-def test_health_detailed_csrf_exempt(client, app, db):
-    # GET requests don't need CSRF, but verify the endpoint works without it
+def test_health_detailed_requires_admin_role(client, app, db):
+    # Non-admin users must be forbidden
+    _create_user(app, "patient_hd1", role="patient")
+    _login(client, "patient_hd1")
     resp = client.get("/health/detailed")
-    assert resp.status_code == 200
-    data = resp.get_json()
-    assert data["status"] == "ok"
+    assert resp.status_code in (302, 403)

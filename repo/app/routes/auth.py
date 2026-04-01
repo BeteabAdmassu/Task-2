@@ -6,7 +6,7 @@ from flask_login import login_user, logout_user, login_required, current_user
 from markupsafe import escape
 from app.extensions import db
 from app.models.user import User, LoginAttempt
-from app.utils.audit import log_action
+from app.utils.audit import log_action, check_new_device_alert
 from app.utils.antireplay import antireplay
 from app.utils.reminders import generate_pending_reminders
 
@@ -187,6 +187,10 @@ def login():
         if user and user.is_active and user.check_password(password):
             _record_attempt(username, ip, ua, success=True)
             log_action("login_success", "user", user.id, {"username": username, "ip": ip})
+            try:
+                check_new_device_alert(user.id, username, ip, ua)
+            except Exception:
+                pass  # never block login on alert errors
             login_user(user)
             try:
                 generate_pending_reminders(user_id=user.id)

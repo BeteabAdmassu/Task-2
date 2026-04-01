@@ -1,5 +1,6 @@
 """Tests for prompt 07 — Visit State Machine & Dashboard."""
 
+import uuid
 import pytest
 from datetime import date, time, timedelta
 from app.models.user import User
@@ -113,12 +114,77 @@ def test_transition_endpoint(client, app, db):
     pat_id = _create_user(app, "pat_t6")
     vid = _create_visit(app, pat_id, cid)
     _login(client, "admin_v2")
+    path = f"/visits/{vid}/transition"
     resp = client.post(
-        f"/visits/{vid}/transition",
-        data=signed_data("POST", f"/visits/{vid}/transition", {"target_state": "checked_in"}),
+        path,
+        data=signed_data("POST", path, {
+            "target_state": "checked_in",
+            "request_token": str(uuid.uuid4()),
+        }),
         follow_redirects=True,
     )
     assert resp.status_code == 200
+
+
+def test_transition_requires_request_token(client, app, db):
+    """POST /visits/<id>/transition without request_token returns 422 (HTMX) or redirects."""
+    uid, cid = _create_clinician(app, "doc_t9")
+    _create_user(app, "admin_v5", role="administrator")
+    pat_id = _create_user(app, "pat_t9")
+    vid = _create_visit(app, pat_id, cid)
+    _login(client, "admin_v5")
+    path = f"/visits/{vid}/transition"
+    # No request_token in payload
+    resp = client.post(
+        path,
+        data=signed_data("POST", path, {"target_state": "checked_in"}),
+        headers={"HX-Request": "true"},
+    )
+    assert resp.status_code == 422
+    # Visit should not have transitioned
+    with app.app_context():
+        visit = db.session.get(Visit, vid)
+        assert visit.status == "booked"
+
+
+def test_transition_duplicate_token_is_idempotent(client, app, db):
+    """Submitting the same request_token twice does not double-transition the visit."""
+    uid, cid = _create_clinician(app, "doc_t10")
+    _create_user(app, "admin_v6", role="administrator")
+    pat_id = _create_user(app, "pat_t10")
+    vid = _create_visit(app, pat_id, cid)
+    _login(client, "admin_v6")
+    path = f"/visits/{vid}/transition"
+    token = str(uuid.uuid4())
+
+    # First submission — should succeed and move to checked_in
+    resp1 = client.post(
+        path,
+        data=signed_data("POST", path, {"target_state": "checked_in", "request_token": token}),
+        follow_redirects=True,
+    )
+    assert resp1.status_code == 200
+
+    with app.app_context():
+        visit = db.session.get(Visit, vid)
+        assert visit.status == "checked_in"
+        assert VisitTransition.query.filter_by(visit_id=vid).count() == 1
+
+    # Second submission with the same token on an HTMX retry (new antireplay nonce)
+    # The state machine must return the cached transition, leaving the visit unchanged.
+    path2 = f"/visits/{vid}/transition"
+    resp2 = client.post(
+        path2,
+        data=signed_data("POST", path2, {"target_state": "seen", "request_token": token}),
+        follow_redirects=True,
+    )
+    assert resp2.status_code == 200
+
+    with app.app_context():
+        visit = db.session.get(Visit, vid)
+        # Status must NOT have advanced to "seen"
+        assert visit.status == "checked_in"
+        assert VisitTransition.query.filter_by(visit_id=vid).count() == 1
 
 
 def test_timeline_endpoint(client, app, db):

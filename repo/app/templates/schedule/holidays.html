@@ -3,8 +3,10 @@
 {% block content %}
 <div class="card">
     <div class="card-header"><h2>Holiday Management</h2></div>
-    <form method="POST" style="display:flex; gap:1rem; flex-wrap:wrap; margin-bottom:1rem;">
+    {% set _add_action = url_for('schedule.holidays') %}
+    <form method="POST" action="{{ _add_action }}" style="display:flex; gap:1rem; flex-wrap:wrap; margin-bottom:1rem;">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        {{ antireplay_inputs("POST", _add_action) }}
         <div class="form-group">
             <label for="date">Date</label>
             <input type="date" id="date" name="date" class="form-control" required>

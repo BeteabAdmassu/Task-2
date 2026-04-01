@@ -13,6 +13,7 @@
         <form method="POST" action="{{ _action }}" style="display:inline;"
               hx-post="{{ _action }}" hx-target="#visit-rows" hx-swap="innerHTML">
             <input type="hidden" name="target_state" value="{{ target }}">
+            <input type="hidden" name="request_token" value="{{ generate_request_token() }}">
             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
             {{ antireplay_inputs("POST", _action) }}
             <button type="submit" class="btn btn-sm btn-{{ 'danger' if target in ('canceled', 'no_show') else 'primary' }}">

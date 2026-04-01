@@ -218,9 +218,11 @@ def test_holiday_blocks_slots(client, app):
         db.session.add(slot)
         db.session.commit()
 
-    resp = client.post("/schedule/admin/holidays", data={
+    from tests.signing_helpers import signed_data as _sd
+    path = "/schedule/admin/holidays"
+    resp = client.post(path, data=_sd("POST", path, {
         "date": "2026-12-25", "name": "Christmas",
-    }, follow_redirects=True)
+    }), follow_redirects=True)
     assert resp.status_code == 200
 
     with app.app_context():
@@ -257,11 +259,13 @@ def test_bulk_generate(client, app):
         days_until_monday = 7
     next_monday = today + timedelta(days=days_until_monday)
 
-    resp = client.post("/schedule/admin/bulk-generate", data={
+    from tests.signing_helpers import signed_data as _sd
+    path = "/schedule/admin/bulk-generate"
+    resp = client.post(path, data=_sd("POST", path, {
         "clinician_id": str(cid),
         "date_from": next_monday.isoformat(),
         "date_to": next_monday.isoformat(),
-    }, follow_redirects=True)
+    }), follow_redirects=True)
     assert resp.status_code == 200
     assert b"Generated" in resp.data
 

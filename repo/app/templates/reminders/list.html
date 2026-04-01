@@ -29,8 +29,10 @@
                 {% elif r.type == 'appointment' and r.related_entity_id %}
                 <a href="{{ url_for('schedule.my_appointments') }}" class="btn btn-sm btn-primary">View Appointment</a>
                 {% endif %}
-                <form method="POST" action="{{ url_for('reminders.dismiss', reminder_id=r.id) }}" style="display:inline;">
+                {% set _dismiss_action = url_for('reminders.dismiss', reminder_id=r.id) %}
+                <form method="POST" action="{{ _dismiss_action }}" style="display:inline;">
                     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    {{ antireplay_inputs("POST", _dismiss_action) }}
                     <button type="submit" class="btn btn-sm btn-secondary">Dismiss</button>
                 </form>
             </td>

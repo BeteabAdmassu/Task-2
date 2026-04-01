@@ -52,10 +52,16 @@ def transition(visit_id):
 
     target_state = request.form.get("target_state", "").strip()
     reason = request.form.get("reason", "").strip() or None
-    request_token = request.form.get("request_token", "").strip() or None
+    request_token = request.form.get("request_token", "").strip()
+
+    if not request_token:
+        if request.headers.get("HX-Request"):
+            return "<tr><td colspan='6'>Missing request token — please reload the page.</td></tr>", 422
+        flash("Missing request token. Please reload and try again.", "danger")
+        return redirect(url_for("visits.dashboard"))
 
     try:
-        t = transition_visit(visit, target_state, current_user.id, reason=reason, request_token=request_token)
+        t = transition_visit(visit, target_state, current_user.id, reason=reason, request_token=request_token or None)
         log_action("visit_transition", "visit", visit.id, {
             "from": t.from_status, "to": t.to_status, "reason": reason
         })

@@ -58,7 +58,8 @@ def test_dismiss_reminder(client, app, db):
         db.session.commit()
         rid = r.id
     _login(client, "pat_rem2")
-    resp = client.post(f"/reminders/{rid}/dismiss", follow_redirects=True)
+    path = f"/reminders/{rid}/dismiss"
+    resp = client.post(path, data=signed_data("POST", path), follow_redirects=True)
     assert resp.status_code == 200
     with app.app_context():
         r = db.session.get(Reminder, rid)
@@ -79,7 +80,8 @@ def test_dismiss_other_user_reminder_denied(client, app, db):
         db.session.commit()
         rid = r.id
     _login(client, "pat_rem4")
-    resp = client.post(f"/reminders/{rid}/dismiss", follow_redirects=True)
+    path = f"/reminders/{rid}/dismiss"
+    resp = client.post(path, data=signed_data("POST", path), follow_redirects=True)
     assert b"Access denied" in resp.data
 
 
