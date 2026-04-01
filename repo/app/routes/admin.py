@@ -3,6 +3,7 @@ from flask_login import current_user
 from app.extensions import db
 from app.models.user import User
 from app.utils.auth import role_required
+from app.utils.antireplay import antireplay
 
 admin_bp = Blueprint("admin", __name__, url_prefix="/admin")
 
@@ -16,6 +17,7 @@ def users():
 
 @admin_bp.route("/users/<int:user_id>/role", methods=["PUT", "POST"])
 @role_required("administrator")
+@antireplay
 def change_role(user_id):
     user = db.session.get(User, user_id)
     if not user:
@@ -60,6 +62,7 @@ def change_role(user_id):
 
 @admin_bp.route("/users/<int:user_id>/status", methods=["PUT", "POST"])
 @role_required("administrator")
+@antireplay
 def change_status(user_id):
     user = db.session.get(User, user_id)
     if not user:

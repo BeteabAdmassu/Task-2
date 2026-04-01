@@ -4,6 +4,7 @@ from flask_login import current_user, login_required
 from app.extensions import db
 from app.models.reminder import Reminder, ReminderConfig
 from app.utils.auth import role_required
+from app.utils.antireplay import antireplay
 from app.utils.reminders import generate_pending_reminders
 
 reminders_bp = Blueprint("reminders", __name__, url_prefix="/reminders")
@@ -72,6 +73,7 @@ def admin_config():
 
 @reminders_bp.route("/admin/config/<int:template_id>", methods=["POST"])
 @role_required("administrator")
+@antireplay
 def update_config(template_id):
     """Persist reassessment interval for a template to the database."""
     interval = request.form.get("interval_days", 90, type=int)

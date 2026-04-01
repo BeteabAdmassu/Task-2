@@ -5,6 +5,7 @@ from app.extensions import db
 from app.models.scheduling import (
     Clinician, ScheduleTemplate, Room, Slot, Reservation, Holiday, expire_stale_holds,
 )
+from app.models.visit import Visit
 from app.utils.auth import role_required
 from app.utils.antireplay import antireplay
 
@@ -149,6 +150,23 @@ def confirm(reservation_id):
     reservation.status = "confirmed"
     reservation.confirmed_at = datetime.now(timezone.utc)
     reservation.slot.booked_count += 1
+
+    # Idempotently create a Visit record for this booking.
+    # Using slot_id + patient_id as the uniqueness key prevents duplicates
+    # even if confirm is somehow called twice on separate requests.
+    existing_visit = Visit.query.filter_by(
+        patient_id=reservation.patient_id,
+        slot_id=reservation.slot_id,
+    ).first()
+    if not existing_visit:
+        visit = Visit(
+            patient_id=reservation.patient_id,
+            clinician_id=reservation.slot.clinician_id,
+            slot_id=reservation.slot_id,
+            status="booked",
+        )
+        db.session.add(visit)
+
     db.session.commit()
 
     flash("Appointment confirmed!", "success")
@@ -258,6 +276,7 @@ def holidays():
 
 @schedule_bp.route("/admin/holidays/<int:holiday_id>/delete", methods=["POST"])
 @role_required("administrator")
+@antireplay
 def delete_holiday(holiday_id):
     h = db.session.get(Holiday, holiday_id)
     if h:

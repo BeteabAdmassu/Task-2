@@ -26,8 +26,10 @@
                 <td>{{ h.date }}</td>
                 <td>{{ h.name }}</td>
                 <td>
-                    <form method="POST" action="{{ url_for('schedule.delete_holiday', holiday_id=h.id) }}" style="display:inline;">
+                    {% set _del_action = url_for('schedule.delete_holiday', holiday_id=h.id) %}
+                    <form method="POST" action="{{ _del_action }}" style="display:inline;">
                         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                        {{ antireplay_inputs("POST", _del_action) }}
                         <button type="submit" class="btn btn-danger" style="padding:0.25rem 0.5rem; font-size:0.85rem;">Remove</button>
                     </form>
                 </td>

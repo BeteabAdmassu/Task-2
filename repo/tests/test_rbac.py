@@ -3,6 +3,7 @@
 import pytest
 from app.models.user import User
 from app.extensions import db
+from tests.signing_helpers import signed_data
 
 
 def _create_user(app, username, role="patient", password="Password1"):
@@ -60,9 +61,10 @@ def test_change_user_role(client, app):
     _create_user(app, "admin2", role="administrator")
     uid = _create_user(app, "user2", role="patient")
     _login(client, "admin2")
+    path = f"/admin/users/{uid}/role"
     resp = client.post(
-        f"/admin/users/{uid}/role",
-        data={"role": "clinician"},
+        path,
+        data=signed_data("POST", path, {"role": "clinician"}),
         headers={"HX-Request": "true"},
     )
     assert resp.status_code == 200
@@ -89,15 +91,17 @@ def test_cannot_demote_last_admin(client, app):
     _create_user(app, "admin5", role="administrator")
     _login(client, "admin5")
     # Demote admin4 first
+    path = f"/admin/users/{uid}/role"
     resp = client.post(
-        f"/admin/users/{uid}/role",
-        data={"role": "patient"},
+        path,
+        data=signed_data("POST", path, {"role": "patient"}),
         headers={"HX-Request": "true"},
     )
     assert resp.status_code == 200
     # Now try to self-demote admin5 — should fail (can't change own role)
     with app.app_context():
         admin5 = User.query.filter_by(username="admin5").first()
+        # Self-change returns 400 before antireplay is even consulted
         resp = client.post(
             f"/admin/users/{admin5.id}/role",
             data={"role": "patient"},
@@ -110,9 +114,10 @@ def test_deactivate_user(client, app):
     _create_user(app, "admin6", role="administrator")
     uid = _create_user(app, "user6", role="patient")
     _login(client, "admin6")
+    path = f"/admin/users/{uid}/status"
     resp = client.post(
-        f"/admin/users/{uid}/status",
-        data={"is_active": "false"},
+        path,
+        data=signed_data("POST", path, {"is_active": "false"}),
         headers={"HX-Request": "true"},
     )
     assert resp.status_code == 200
@@ -127,7 +132,9 @@ def test_deactivated_user_cannot_login(client, app):
     _login(client, "admin7")
     with app.app_context():
         user = User.query.filter_by(username="deactivated").first()
-        client.post(f"/admin/users/{user.id}/status", data={"is_active": "false"})
+        uid_deact = user.id
+    path = f"/admin/users/{uid_deact}/status"
+    client.post(path, data=signed_data("POST", path, {"is_active": "false"}))
 
     # Logout admin and try to login as deactivated user
     client.post("/auth/logout")

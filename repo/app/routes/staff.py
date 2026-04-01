@@ -5,6 +5,7 @@ from app.models.user import User
 from app.models.demographics import PatientDemographics, DemographicsChangeLog
 from app.utils.encryption import encrypt_value, decrypt_value, mask_id
 from app.utils.auth import role_required
+from app.utils.antireplay import antireplay
 from app.routes.patient import _parse_demographics_form, _save_demographics, PLAIN_FIELDS
 
 staff_bp = Blueprint("staff", __name__, url_prefix="/staff")
@@ -74,6 +75,7 @@ def patient_demographics(patient_id):
 
 @staff_bp.route("/patients/<int:patient_id>/demographics/reveal", methods=["POST"])
 @role_required("administrator", "front_desk")
+@antireplay
 def reveal_field(patient_id):
     demo = PatientDemographics.query.filter_by(user_id=patient_id).first()
     if not demo:

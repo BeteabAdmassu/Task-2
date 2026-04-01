@@ -16,8 +16,10 @@
             <td>Default (All Templates)</td>
             <td>{{ config.reassessment_interval_days }} days</td>
             <td>
-                <form method="POST" action="{{ url_for('reminders.update_config', template_id=0) }}" style="display:inline;">
+                {% set _cfg_action = url_for('reminders.update_config', template_id=0) %}
+                <form method="POST" action="{{ _cfg_action }}" style="display:inline;">
                     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    {{ antireplay_inputs("POST", _cfg_action) }}
                     <input type="number" name="interval_days" value="{{ config.reassessment_interval_days }}" min="1" max="365" style="width:80px;">
                     <button type="submit" class="btn btn-sm btn-primary">Update</button>
                 </form>

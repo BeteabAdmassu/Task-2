@@ -6,6 +6,11 @@ from functools import wraps
 from app.extensions import db
 from app.models.audit import SignedRequest
 
+
+def _hash_nonce(nonce: str) -> str:
+    """One-way hash a nonce for safe at-rest storage."""
+    return hashlib.sha256(nonce.encode()).hexdigest()
+
 REPLAY_WINDOW = timedelta(minutes=5)
 
 
@@ -60,11 +65,13 @@ def antireplay(f):
             return jsonify({"error": "Invalid request signature"}), 400
 
         # Replay check — nonce must not have been seen before.
-        existing = SignedRequest.query.filter_by(nonce=nonce).first()
+        # Store and compare the SHA-256 hash so raw nonces never reach the DB.
+        nonce_hash = _hash_nonce(nonce)
+        existing = SignedRequest.query.filter_by(nonce=nonce_hash).first()
         if existing:
             return jsonify({"error": "Request already processed"}), 409
 
-        sr = SignedRequest(nonce=nonce, timestamp=ts, expires_at=ts + REPLAY_WINDOW)
+        sr = SignedRequest(nonce=nonce_hash, timestamp=ts, expires_at=ts + REPLAY_WINDOW)
         db.session.add(sr)
         db.session.commit()
         return f(*args, **kwargs)

@@ -5,6 +5,7 @@ from datetime import date, datetime, timedelta, timezone
 from app.models.user import User
 from app.models.reminder import Reminder
 from app.extensions import db
+from tests.signing_helpers import signed_data
 
 
 def _create_user(app, username, role="patient", password="Password1"):
@@ -340,9 +341,10 @@ def test_admin_update_config(client, app, db):
     """POST /reminders/admin/config/<template_id> updates config."""
     _create_user(app, "admin_cfg2", role="administrator")
     _login(client, "admin_cfg2")
+    path = "/reminders/admin/config/0"
     resp = client.post(
-        "/reminders/admin/config/0",
-        data={"interval_days": "60"},
+        path,
+        data=signed_data("POST", path, {"interval_days": "60"}),
         follow_redirects=True,
     )
     assert resp.status_code == 200
@@ -481,9 +483,10 @@ def test_admin_config_persists_to_db(client, app, db):
 
     _create_user(app, "admin_cfg_db", role="administrator")
     _login(client, "admin_cfg_db")
+    path = "/reminders/admin/config/0"
     resp = client.post(
-        "/reminders/admin/config/0",
-        data={"interval_days": "45"},
+        path,
+        data=signed_data("POST", path, {"interval_days": "45"}),
         follow_redirects=True,
     )
     assert resp.status_code == 200

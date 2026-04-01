@@ -20,8 +20,10 @@
             <td>{% if alert.acknowledged_at %}Acknowledged{% else %}Open{% endif %}</td>
             <td>
                 {% if not alert.acknowledged_at %}
-                <form method="POST" action="{{ url_for('observability.acknowledge_alert', alert_id=alert.id) }}">
+                {% set _ack_action = url_for('observability.acknowledge_alert', alert_id=alert.id) %}
+                <form method="POST" action="{{ _ack_action }}">
                     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    {{ antireplay_inputs("POST", _ack_action) }}
                     <button type="submit" class="btn btn-sm btn-warning">Acknowledge</button>
                 </form>
                 {% endif %}

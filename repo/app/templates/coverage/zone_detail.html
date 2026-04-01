@@ -6,6 +6,91 @@
 <p>{{ zone.description or 'No description' }}</p>
 <p>ZIP Codes: {{ (zone.zip_codes_json or []) | join(', ') }}</p>
 
+<h2>Delivery Windows</h2>
+{% set windows = zone.delivery_windows.all() %}
+{% if windows %}
+<table class="table">
+    <thead>
+        <tr><th>Day</th><th>Start</th><th>End</th><th>Actions</th></tr>
+    </thead>
+    <tbody>
+        {% for w in windows %}
+        <tr>
+            <td>{{ w.day_of_week }}</td>
+            <td>{{ w.start_time.strftime('%H:%M') }}</td>
+            <td>{{ w.end_time.strftime('%H:%M') }}</td>
+            <td style="white-space:nowrap;">
+                {% set _del_win_action = url_for('coverage.delete_window', zone_id=zone.id, window_id=w.id) %}
+                <form method="POST" action="{{ _del_win_action }}" style="display:inline;">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    {{ antireplay_inputs("POST", _del_win_action) }}
+                    <button type="submit" class="btn btn-sm btn-danger">Remove</button>
+                </form>
+            </td>
+        </tr>
+        <tr>
+            <td colspan="4" style="background:#f8f9fa; padding:0.5rem 1rem;">
+                <details>
+                    <summary style="cursor:pointer; font-size:0.875rem;">Edit this window</summary>
+                    {% set _upd_win_action = url_for('coverage.update_window', zone_id=zone.id, window_id=w.id) %}
+                    <form method="POST" action="{{ _upd_win_action }}"
+                          style="display:flex; gap:0.75rem; align-items:flex-end; flex-wrap:wrap; margin-top:0.5rem;">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                        {{ antireplay_inputs("POST", _upd_win_action) }}
+                        <div class="form-group" style="margin:0;">
+                            <label style="font-size:0.8rem;">Day</label>
+                            <select name="day_of_week" class="form-control form-control-sm">
+                                {% for day in ['all','monday','tuesday','wednesday','thursday','friday','saturday','sunday'] %}
+                                <option value="{{ day }}" {% if w.day_of_week == day %}selected{% endif %}>{{ day | title }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div class="form-group" style="margin:0;">
+                            <label style="font-size:0.8rem;">Start (HH:MM)</label>
+                            <input type="time" name="start_time" class="form-control form-control-sm"
+                                   value="{{ w.start_time.strftime('%H:%M') }}">
+                        </div>
+                        <div class="form-group" style="margin:0;">
+                            <label style="font-size:0.8rem;">End (HH:MM)</label>
+                            <input type="time" name="end_time" class="form-control form-control-sm"
+                                   value="{{ w.end_time.strftime('%H:%M') }}">
+                        </div>
+                        <button type="submit" class="btn btn-sm btn-primary">Save</button>
+                    </form>
+                </details>
+            </td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% else %}
+<p>No delivery windows configured.</p>
+{% endif %}
+
+<h3>Add Delivery Window</h3>
+{% set _win_action = url_for('coverage.create_window', zone_id=zone.id) %}
+<form method="POST" action="{{ _win_action }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    {{ antireplay_inputs("POST", _win_action) }}
+    <div class="form-group">
+        <label for="day_of_week">Day</label>
+        <select id="day_of_week" name="day_of_week" class="form-control">
+            {% for day in ['all','monday','tuesday','wednesday','thursday','friday','saturday','sunday'] %}
+            <option value="{{ day }}">{{ day | title }}</option>
+            {% endfor %}
+        </select>
+    </div>
+    <div class="form-group">
+        <label for="start_time">Start Time (HH:MM)</label>
+        <input type="time" id="start_time" name="start_time" class="form-control">
+    </div>
+    <div class="form-group">
+        <label for="end_time">End Time (HH:MM)</label>
+        <input type="time" id="end_time" name="end_time" class="form-control">
+    </div>
+    <button type="submit" class="btn btn-primary">Add Window</button>
+</form>
+
 <h2>Assigned Clinicians</h2>
 <table class="table">
     <thead>

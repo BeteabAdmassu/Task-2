@@ -63,6 +63,23 @@ def register_middleware(app):
                     request.method, request.path, response.status_code, duration_ms,
                     extra=extra,
                 )
+                # Persist slow-query record for admin operations UI.
+                try:
+                    from app.models.audit import SlowQuery
+                    from app.extensions import db
+                    sq = SlowQuery(
+                        endpoint=request.path,
+                        duration_ms=duration_ms,
+                        correlation_id=correlation_id,
+                    )
+                    db.session.add(sq)
+                    db.session.commit()
+                except Exception:
+                    try:
+                        from app.extensions import db
+                        db.session.rollback()
+                    except Exception:
+                        pass
             else:
                 logger.info(
                     "%s %s %s duration=%.1fms",

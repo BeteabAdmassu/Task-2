@@ -4,6 +4,7 @@ from flask_login import current_user
 from app.extensions import db
 from app.models.audit import AnomalyAlert, SlowQuery
 from app.utils.auth import role_required
+from app.utils.antireplay import antireplay
 from app.utils.audit import anomaly_detection
 
 observability_bp = Blueprint("observability", __name__, url_prefix="/admin")
@@ -79,6 +80,7 @@ def operations():
 
 @observability_bp.route("/operations/alerts/<int:alert_id>/acknowledge", methods=["POST"])
 @role_required("administrator")
+@antireplay
 def acknowledge_alert(alert_id):
     alert = AnomalyAlert.query.get_or_404(alert_id)
     alert.acknowledged_at = datetime.now(timezone.utc)

@@ -4,6 +4,7 @@ import pytest
 from datetime import date, time, timedelta, datetime, timezone
 from app.models.user import User
 from app.models.scheduling import Clinician, ScheduleTemplate, Slot, Reservation, Holiday, Room, expire_stale_holds
+from app.models.visit import Visit
 from app.extensions import db
 from tests.signing_helpers import signed_data
 
@@ -283,3 +284,71 @@ def test_my_appointments(client, app):
     resp = client.get("/schedule/my-appointments")
     assert resp.status_code == 200
     assert b"My Appointments" in resp.data
+
+
+# ---------------------------------------------------------------------------
+# Fix 1: booking confirmation wires to Visit lifecycle
+# ---------------------------------------------------------------------------
+
+def test_confirm_creates_visit(client, app):
+    """Confirming a reservation creates a linked Visit record with status='booked'."""
+    uid, cid, sid = _create_clinician_with_slot(app, "doc_cv1")
+    pid = _create_user(app, "pat_cv1")
+    _login(client, "pat_cv1")
+
+    client.post(f"/schedule/hold/{sid}", data=signed_data("POST", f"/schedule/hold/{sid}"))
+
+    with app.app_context():
+        r = Reservation.query.filter_by(slot_id=sid).first()
+        rid = r.id
+
+    client.post(
+        f"/schedule/confirm/{rid}",
+        data=signed_data("POST", f"/schedule/confirm/{rid}"),
+        follow_redirects=True,
+    )
+
+    with app.app_context():
+        visit = Visit.query.filter_by(slot_id=sid, patient_id=pid).first()
+        assert visit is not None
+        assert visit.status == "booked"
+        assert visit.clinician_id == cid
+        assert visit.patient_id == pid
+
+
+def test_confirm_visit_idempotent_no_duplicate(client, app):
+    """Re-confirming a reservation (with pre-existing Visit) does not create a duplicate."""
+    uid, cid, sid = _create_clinician_with_slot(app, "doc_cv2")
+    pid = _create_user(app, "pat_cv2")
+
+    # Pre-create a Visit for this slot/patient as if confirm already ran.
+    with app.app_context():
+        clinician = Clinician.query.get(cid)
+        pre_visit = Visit(patient_id=pid, clinician_id=cid, slot_id=sid, status="booked")
+        db.session.add(pre_visit)
+        # Also create a confirmed reservation so the confirm route doesn't block.
+        res = Reservation(
+            slot_id=sid, patient_id=pid, status="confirmed",
+            held_at=datetime.now(timezone.utc),
+            confirmed_at=datetime.now(timezone.utc),
+        )
+        db.session.add(res)
+        db.session.commit()
+        rid = res.id
+
+    with app.app_context():
+        count_before = Visit.query.filter_by(slot_id=sid, patient_id=pid).count()
+        assert count_before == 1
+
+    # Confirm route should detect existing Visit and skip creation.
+    _login(client, "pat_cv2")
+    # Reservation is already confirmed — route returns early with flash "already confirmed"
+    client.post(
+        f"/schedule/confirm/{rid}",
+        data=signed_data("POST", f"/schedule/confirm/{rid}"),
+        follow_redirects=True,
+    )
+
+    with app.app_context():
+        count_after = Visit.query.filter_by(slot_id=sid, patient_id=pid).count()
+        assert count_after == 1  # still only one

@@ -47,6 +47,8 @@ def register_user(page, username, password="TestPass1"):
     page.fill('input[name="password"]', password)
     page.fill('input[name="password_confirm"]', password)
     page.click('button[type="submit"]')
+    # Wait for HTMX to process the HX-Redirect response and navigate away from the register page.
+    page.wait_for_url(lambda url: "/auth/register" not in url, timeout=10000)
     page.wait_for_load_state("networkidle")
     return page
 
@@ -57,6 +59,8 @@ def login_user(page, username, password):
     page.fill('input[name="username"]', username)
     page.fill('input[name="password"]', password)
     page.click('button[type="submit"]')
+    # Wait for HTMX to process the HX-Redirect response and navigate away from the login page.
+    page.wait_for_url(lambda url: "/auth/login" not in url, timeout=10000)
     page.wait_for_load_state("networkidle")
     return page
 

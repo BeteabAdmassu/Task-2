@@ -1,3 +1,4 @@
+import hashlib
 from datetime import datetime, timezone
 from functools import wraps
 from flask import request, jsonify
@@ -6,11 +7,16 @@ from app.extensions import db
 from app.models.idempotency import RequestToken
 
 
+def _hash_token(token: str) -> str:
+    """One-way hash an idempotency token for safe at-rest storage."""
+    return hashlib.sha256(token.encode()).hexdigest()
+
+
 def check_idempotency(token, user_id=None):
     """Return cached result dict if token exists and hasn't expired, else None."""
     if not token:
         return None
-    record = RequestToken.query.filter_by(token=token).first()
+    record = RequestToken.query.filter_by(token=_hash_token(token)).first()
     if record and user_id is not None and record.user_id is not None and record.user_id != user_id:
         return None
     if record is None:
@@ -28,14 +34,15 @@ def check_idempotency(token, user_id=None):
 
 
 def save_idempotency(token, endpoint, result=None, user_id=None):
-    """Save a result for the given idempotency token."""
+    """Save a result for the given idempotency token (stored as hash)."""
     if not token:
         return
-    record = RequestToken.query.filter_by(token=token).first()
+    token_hash = _hash_token(token)
+    record = RequestToken.query.filter_by(token=token_hash).first()
     if record:
         return  # already saved
     record = RequestToken(
-        token=token,
+        token=token_hash,
         endpoint=endpoint,
         result_json=result,
         user_id=user_id,
