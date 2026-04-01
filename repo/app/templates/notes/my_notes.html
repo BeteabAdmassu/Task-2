@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+{% block title %}My Clinical Notes{% endblock %}
+{% block content %}
+<h2>My Clinical Notes</h2>
+
+{% if notes %}
+<table class="table">
+    <thead>
+        <tr>
+            <th>Date</th>
+            <th>Author</th>
+            <th>Content</th>
+        </tr>
+    </thead>
+    <tbody>
+    {% for note in notes %}
+        <tr>
+            <td>{{ note.created_at.strftime('%Y-%m-%d %H:%M') }}</td>
+            <td>{{ note.author.username }}</td>
+            <td>{{ note.content }}</td>
+        </tr>
+    {% endfor %}
+    </tbody>
+</table>
+{% else %}
+<p>No clinical notes on file.</p>
+{% endif %}
+{% endblock %}

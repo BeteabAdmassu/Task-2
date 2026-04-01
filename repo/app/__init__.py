@@ -77,6 +77,7 @@ def create_app(config_name=None):
     from app.routes.audit import audit_bp
     from app.routes.reminders import reminders_bp
     from app.routes.observability import observability_bp
+    from app.routes.notes import notes_bp
 
     app.register_blueprint(main_bp)
     app.register_blueprint(health_bp)
@@ -91,6 +92,7 @@ def create_app(config_name=None):
     app.register_blueprint(audit_bp)
     app.register_blueprint(reminders_bp)
     app.register_blueprint(observability_bp)
+    app.register_blueprint(notes_bp)
 
     # Template helpers
     @app.context_processor

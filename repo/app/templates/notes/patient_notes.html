@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+{% block title %}Clinical Notes — {{ patient.username }}{% endblock %}
+{% block content %}
+<h2>Clinical Notes for {{ patient.username }}</h2>
+
+<section>
+    <h3>Add Note</h3>
+    {% set _action = url_for('notes.patient_notes', patient_id=patient.id) %}
+    <form method="POST" action="{{ _action }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        {{ antireplay_inputs("POST", _action) }}
+        <div>
+            <label for="content">Note Content</label>
+            <textarea id="content" name="content" rows="5" required
+                      style="width:100%; padding:0.5rem; border:1px solid #ccc; border-radius:4px;"></textarea>
+        </div>
+        <button type="submit" class="btn btn-primary" style="margin-top:0.5rem;">Save Note</button>
+    </form>
+</section>
+
+<section style="margin-top:2rem;">
+    <h3>Existing Notes</h3>
+    {% if notes %}
+    <table class="table">
+        <thead>
+            <tr>
+                <th>Date</th>
+                <th>Author</th>
+                <th>Content</th>
+            </tr>
+        </thead>
+        <tbody>
+        {% for note in notes %}
+            <tr>
+                <td>{{ note.created_at.strftime('%Y-%m-%d %H:%M') }}</td>
+                <td>{{ note.author.username }}</td>
+                <td>{{ note.content }}</td>
+            </tr>
+        {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <p>No clinical notes recorded.</p>
+    {% endif %}
+</section>
+{% endblock %}

@@ -65,7 +65,7 @@ def test_change_role_succeeds_with_antireplay(client, app, db):
     path = f"/admin/users/{uid}/role"
     resp = client.post(
         path,
-        data=signed_data("POST", path, {"role": "clinician"}),
+        data=signed_data("POST", path, {"role": "clinician", "reason": "Promotion approved"}),
         headers={"HX-Request": "true"},
     )
     assert resp.status_code == 200

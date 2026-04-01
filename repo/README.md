@@ -101,6 +101,17 @@ This script will:
 6. Tear down the Docker container
 7. Exit with code 0 on success, non-zero on failure
 
+## Security & Audit Features
+
+### Encrypted Clinical Notes
+Clinical notes are stored encrypted at rest using Fernet symmetric encryption (same key as all other field-level encryption). The `ClinicalNote` model exposes a `content` property that decrypts on access — the raw `content_encrypted` column is never exposed in responses or logs. Access control: patients may read their own notes via `GET /notes/my`; clinicians, front-desk staff, and administrators create and read notes via `GET/POST /notes/patient/<id>`.
+
+### Admin Mutations — Reason Capture & Audit Trail
+Both `change_role` and `change_status` in the admin panel require a non-empty `reason` field. On success, an `AuditLog` entry is written including: actor user ID, action (`change_role` / `change_status`), target user ID, before/after values, and the provided reason. Requests without a reason are rejected with HTTP 400.
+
+### Assessment visit_id Validation
+When a patient submits a health assessment with a `visit_id`, the route verifies the visit exists in the database and — for patient-role users — that `visit.patient_id` matches the submitting user. Invalid or unauthorized `visit_id` values return a validation error without creating an `AssessmentResult`.
+
 ## Project Structure
 
 ```

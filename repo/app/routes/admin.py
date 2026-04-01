@@ -1,9 +1,11 @@
+import json
 from flask import Blueprint, render_template, request, jsonify, flash, redirect, url_for
 from flask_login import current_user
 from app.extensions import db
 from app.models.user import User
 from app.utils.auth import role_required
 from app.utils.antireplay import antireplay
+from app.utils.audit import log_action
 
 admin_bp = Blueprint("admin", __name__, url_prefix="/admin")
 
@@ -41,6 +43,14 @@ def change_role(user_id):
         flash(msg, "danger")
         return redirect(url_for("admin.users"))
 
+    reason = request.form.get("reason", "").strip()
+    if not reason:
+        msg = "A reason is required for role changes."
+        if request.headers.get("HX-Request"):
+            return f'<span class="field-error">{msg}</span>', 400
+        flash(msg, "danger")
+        return redirect(url_for("admin.users"))
+
     # Prevent demoting the last admin
     if user.role == "administrator" and new_role != "administrator":
         admin_count = User.query.filter_by(role="administrator", is_active=True).count()
@@ -51,8 +61,21 @@ def change_role(user_id):
             flash(msg, "danger")
             return redirect(url_for("admin.users"))
 
+    old_role = user.role
     user.role = new_role
     db.session.commit()
+
+    log_action(
+        action="change_role",
+        resource_type="user",
+        resource_id=user.id,
+        details=json.dumps({
+            "target_username": user.username,
+            "before": old_role,
+            "after": new_role,
+            "reason": reason,
+        }),
+    )
 
     if request.headers.get("HX-Request"):
         return render_template("admin/_user_row.html", user=user)
@@ -78,9 +101,30 @@ def change_status(user_id):
         flash(msg, "danger")
         return redirect(url_for("admin.users"))
 
-    new_status = request.form.get("is_active", "").strip().lower()
-    user.is_active = new_status in ("true", "1", "yes", "on")
+    reason = request.form.get("reason", "").strip()
+    if not reason:
+        msg = "A reason is required for status changes."
+        if request.headers.get("HX-Request"):
+            return f'<span class="field-error">{msg}</span>', 400
+        flash(msg, "danger")
+        return redirect(url_for("admin.users"))
+
+    new_status_raw = request.form.get("is_active", "").strip().lower()
+    old_active = user.is_active
+    user.is_active = new_status_raw in ("true", "1", "yes", "on")
     db.session.commit()
+
+    log_action(
+        action="change_status",
+        resource_type="user",
+        resource_id=user.id,
+        details=json.dumps({
+            "target_username": user.username,
+            "before": old_active,
+            "after": user.is_active,
+            "reason": reason,
+        }),
+    )
 
     if request.headers.get("HX-Request"):
         return render_template("admin/_user_row.html", user=user)

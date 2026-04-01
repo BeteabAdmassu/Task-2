@@ -15,6 +15,8 @@
                 {% endfor %}
             </select>
             {% if user.id != current_user.id %}
+            <input type="text" name="reason" placeholder="Reason (required)" required
+                   style="padding:0.25rem 0.5rem; font-size:0.85rem; border:1px solid #ccc; border-radius:4px;">
             <button type="submit" class="btn btn-secondary" style="padding:0.25rem 0.5rem; font-size:0.85rem;">Save</button>
             {% endif %}
         </form>
@@ -35,6 +37,8 @@
               style="display:inline;">
             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
             {{ antireplay_inputs("POST", _status_action) }}
+            <input type="text" name="reason" placeholder="Reason (required)" required
+                   style="padding:0.25rem 0.5rem; font-size:0.85rem; border:1px solid #ccc; border-radius:4px;">
             {% if user.is_active %}
             <input type="hidden" name="is_active" value="false">
             <button type="submit" class="btn btn-danger" style="padding:0.25rem 0.5rem; font-size:0.85rem;">Deactivate</button>

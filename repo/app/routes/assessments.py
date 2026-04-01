@@ -4,6 +4,7 @@ from flask import Blueprint, render_template, request, redirect, url_for, flash,
 from flask_login import login_required, current_user
 from app.extensions import db
 from app.models.assessment import AssessmentTemplate, AssessmentResult, AssessmentDraft
+from app.models.visit import Visit
 from app.utils.scoring import calculate_scores, calculate_risk_level, get_or_create_default_template
 from app.utils.auth import role_required
 from app.utils.antireplay import antireplay
@@ -114,6 +115,16 @@ def submit():
     template = get_or_create_default_template(db.session)
     visit_id = request.form.get("visit_id", type=int)
     request_token = request.form.get("request_token", "")
+
+    # Validate visit_id if provided
+    if visit_id is not None:
+        visit = db.session.get(Visit, visit_id)
+        if visit is None:
+            flash("Invalid visit: not found.", "danger")
+            return redirect(url_for("assessments.start", visit_id=visit_id))
+        if current_user.role == "patient" and visit.patient_id != current_user.id:
+            flash("Invalid visit: access denied.", "danger")
+            return redirect(url_for("assessments.start"))
 
     # Idempotency check
     if request_token:

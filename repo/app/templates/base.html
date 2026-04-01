@@ -32,6 +32,9 @@
                     <a href="{{ url_for('visits.dashboard') }}" hx-get="{{ url_for('visits.dashboard') }}" hx-target="#main-content" hx-select="#main-content" hx-push-url="true">Visits</a>
                     {% endif %}
                     {% if current_user.role == 'patient' %}
+                    <a href="{{ url_for('notes.my_notes') }}" hx-get="{{ url_for('notes.my_notes') }}" hx-target="#main-content" hx-select="#main-content" hx-push-url="true">My Notes</a>
+                    {% endif %}
+                    {% if current_user.role == 'patient' %}
                     <a href="{{ url_for('reminders.my_reminders') }}" hx-get="{{ url_for('reminders.my_reminders') }}" hx-target="#main-content" hx-select="#main-content" hx-push-url="true">
                         Reminders <span id="reminder-badge" hx-get="{{ url_for('reminders.reminder_count') }}" hx-trigger="load, every 60s" hx-swap="innerHTML"></span>
                     </a>

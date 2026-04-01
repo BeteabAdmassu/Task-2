@@ -8,3 +8,4 @@ from app.models.coverage import CoverageZone, ZoneAssignment, ZoneDeliveryWindow
 from app.models.audit import AuditLog, AnomalyAlert, SlowQuery, SignedRequest
 from app.models.reminder import Reminder, ReminderConfig
 from app.models.idempotency import RequestToken
+from app.models.clinical_note import ClinicalNote

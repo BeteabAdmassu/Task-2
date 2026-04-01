@@ -4,6 +4,8 @@ import json
 import pytest
 from app.models.user import User
 from app.models.assessment import AssessmentResult, AssessmentDraft
+from app.models.visit import Visit
+from app.models.scheduling import Clinician
 from app.extensions import db
 from app.utils.scoring import calculate_scores, calculate_risk_level
 from tests.signing_helpers import signed_data
@@ -223,3 +225,95 @@ def test_save_draft(client, app):
     resp = client.post("/assessments/save-draft", data=data)
     assert resp.status_code == 200
     assert b"saved" in resp.data.lower()
+
+
+# ---------------------------------------------------------------------------
+# visit_id validation tests
+# ---------------------------------------------------------------------------
+
+def _create_clinician_for_assessment(app, username):
+    with app.app_context():
+        user = User(username=username, role="clinician")
+        user.set_password("Password1")
+        db.session.add(user)
+        db.session.commit()
+        c = Clinician(user_id=user.id)
+        db.session.add(c)
+        db.session.commit()
+        return c.id
+
+
+def _create_visit_for(app, patient_id, clinician_id):
+    with app.app_context():
+        visit = Visit(patient_id=patient_id, clinician_id=clinician_id, status="booked")
+        db.session.add(visit)
+        db.session.commit()
+        return visit.id
+
+
+def _fill_draft(client, visit_id=None):
+    """Walk through all wizard steps so a draft exists."""
+    all_data = dict(LOW_RISK_ANSWERS)
+    token = "tok-visit-val"
+    all_data["request_token"] = token
+    if visit_id:
+        all_data["visit_id"] = str(visit_id)
+    for step in range(1, 6):
+        client.post(f"/assessments/step/{step}", data=all_data)
+    return token
+
+
+def test_submit_rejects_nonexistent_visit_id(client, app):
+    """submit() must reject a visit_id that doesn't exist in the DB."""
+    _create_user(app, "pat_vv1")
+    _login(client, "pat_vv1")
+    _fill_draft(client)
+
+    path = "/assessments/submit"
+    resp = client.post(
+        path,
+        data=signed_data("POST", path, {"request_token": "tok-visit-val", "visit_id": "99999"}),
+        follow_redirects=False,
+    )
+    # Route redirects away (does not land on result page)
+    assert resp.status_code == 302
+    assert "/assessments/result" not in resp.headers.get("Location", "")
+
+
+def test_submit_rejects_foreign_visit(client, app):
+    """Patient A cannot bind an assessment to Patient B's visit."""
+    cid = _create_clinician_for_assessment(app, "doc_fv2")
+    pid_a = _create_user(app, "pat_fv2a")
+    pid_b = _create_user(app, "pat_fv2b")
+    vid_b = _create_visit_for(app, patient_id=pid_b, clinician_id=cid)
+
+    _login(client, "pat_fv2a")
+    _fill_draft(client)
+
+    path = "/assessments/submit"
+    resp = client.post(
+        path,
+        data=signed_data("POST", path, {"request_token": "tok-visit-val", "visit_id": str(vid_b)}),
+        follow_redirects=False,
+    )
+    assert resp.status_code == 302
+    assert "/assessments/result" not in resp.headers.get("Location", "")
+
+
+def test_submit_accepts_own_visit(client, app):
+    """Patient binding assessment to their own visit must succeed."""
+    cid = _create_clinician_for_assessment(app, "doc_ov2")
+    pid = _create_user(app, "pat_ov2")
+    vid = _create_visit_for(app, patient_id=pid, clinician_id=cid)
+
+    _login(client, "pat_ov2")
+    _fill_draft(client, visit_id=vid)
+
+    path = "/assessments/submit"
+    resp = client.post(
+        path,
+        data=signed_data("POST", path, {"request_token": "tok-visit-val", "visit_id": str(vid)}),
+        follow_redirects=True,
+    )
+    assert resp.status_code == 200
+    assert b"Invalid visit" not in resp.data

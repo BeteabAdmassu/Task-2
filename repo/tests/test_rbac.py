@@ -64,7 +64,7 @@ def test_change_user_role(client, app):
     path = f"/admin/users/{uid}/role"
     resp = client.post(
         path,
-        data=signed_data("POST", path, {"role": "clinician"}),
+        data=signed_data("POST", path, {"role": "clinician", "reason": "Promotion approved"}),
         headers={"HX-Request": "true"},
     )
     assert resp.status_code == 200
@@ -94,7 +94,7 @@ def test_cannot_demote_last_admin(client, app):
     path = f"/admin/users/{uid}/role"
     resp = client.post(
         path,
-        data=signed_data("POST", path, {"role": "patient"}),
+        data=signed_data("POST", path, {"role": "patient", "reason": "Role reassignment"}),
         headers={"HX-Request": "true"},
     )
     assert resp.status_code == 200
@@ -117,7 +117,7 @@ def test_deactivate_user(client, app):
     path = f"/admin/users/{uid}/status"
     resp = client.post(
         path,
-        data=signed_data("POST", path, {"is_active": "false"}),
+        data=signed_data("POST", path, {"is_active": "false", "reason": "Account review"}),
         headers={"HX-Request": "true"},
     )
     assert resp.status_code == 200
@@ -134,7 +134,7 @@ def test_deactivated_user_cannot_login(client, app):
         user = User.query.filter_by(username="deactivated").first()
         uid_deact = user.id
     path = f"/admin/users/{uid_deact}/status"
-    client.post(path, data=signed_data("POST", path, {"is_active": "false"}))
+    client.post(path, data=signed_data("POST", path, {"is_active": "false", "reason": "Account suspended"}))
 
     # Logout admin and try to login as deactivated user
     client.post("/auth/logout")
@@ -184,3 +184,81 @@ def test_nav_hides_admin_link_for_patient(client, app):
     _login(client, "patient11")
     resp = client.get("/")
     assert b"/admin/users" not in resp.data
+
+
+def test_change_role_requires_reason(client, app):
+    """change_role without a reason field must return 400."""
+    _create_user(app, "admin_rr1", role="administrator")
+    uid = _create_user(app, "user_rr1", role="patient")
+    _login(client, "admin_rr1")
+    path = f"/admin/users/{uid}/role"
+    resp = client.post(
+        path,
+        data=signed_data("POST", path, {"role": "clinician"}),  # no reason
+        headers={"HX-Request": "true"},
+    )
+    assert resp.status_code == 400
+
+
+def test_change_status_requires_reason(client, app):
+    """change_status without a reason field must return 400."""
+    _create_user(app, "admin_rr2", role="administrator")
+    uid = _create_user(app, "user_rr2", role="patient")
+    _login(client, "admin_rr2")
+    path = f"/admin/users/{uid}/status"
+    resp = client.post(
+        path,
+        data=signed_data("POST", path, {"is_active": "false"}),  # no reason
+        headers={"HX-Request": "true"},
+    )
+    assert resp.status_code == 400
+
+
+def test_change_role_creates_audit_record(client, app):
+    """Successful role change creates an AuditLog with before/after/reason."""
+    from app.models.audit import AuditLog
+    import json
+
+    _create_user(app, "admin_al1", role="administrator")
+    uid = _create_user(app, "user_al1", role="patient")
+    _login(client, "admin_al1")
+
+    path = f"/admin/users/{uid}/role"
+    client.post(
+        path,
+        data=signed_data("POST", path, {"role": "clinician", "reason": "Credential verified"}),
+        headers={"HX-Request": "true"},
+    )
+
+    with app.app_context():
+        entry = AuditLog.query.filter_by(action="change_role").order_by(AuditLog.id.desc()).first()
+        assert entry is not None
+        details = json.loads(entry.details_json)
+        assert details["before"] == "patient"
+        assert details["after"] == "clinician"
+        assert details["reason"] == "Credential verified"
+
+
+def test_change_status_creates_audit_record(client, app):
+    """Successful status change creates an AuditLog with before/after/reason."""
+    from app.models.audit import AuditLog
+    import json
+
+    _create_user(app, "admin_al2", role="administrator")
+    uid = _create_user(app, "user_al2", role="patient")
+    _login(client, "admin_al2")
+
+    path = f"/admin/users/{uid}/status"
+    client.post(
+        path,
+        data=signed_data("POST", path, {"is_active": "false", "reason": "Suspended pending review"}),
+        headers={"HX-Request": "true"},
+    )
+
+    with app.app_context():
+        entry = AuditLog.query.filter_by(action="change_status").order_by(AuditLog.id.desc()).first()
+        assert entry is not None
+        details = json.loads(entry.details_json)
+        assert details["before"] is True
+        assert details["after"] is False
+        assert details["reason"] == "Suspended pending review"
