@@ -1,0 +1,16 @@
+.tmp/
+.claude/
+
+# If you have local editor files, it's good to ignore them here
+.vscode/*
+!.vscode/settings.json
+!.vscode/extensions.json
+!.vscode/launch.json
+.idea/
+.vs/
+
+# Playwright Test Artifacts
+playwright-report/
+test-results/
+blob-report/
+playwright/.cache/
