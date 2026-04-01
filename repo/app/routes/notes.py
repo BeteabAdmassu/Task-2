@@ -20,6 +20,9 @@ def patient_notes(patient_id):
     if not patient:
         flash("Patient not found.", "danger")
         return redirect(url_for("staff.patient_list"))
+    if patient.role != "patient":
+        flash("Target user is not a patient.", "danger")
+        return redirect(url_for("staff.patient_list"))
 
     if request.method == "POST":
         content = request.form.get("content", "").strip()

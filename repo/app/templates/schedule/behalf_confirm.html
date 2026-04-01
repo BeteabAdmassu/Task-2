@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% block title %}Confirm Appointment for {{ patient.username }} — MeridianCare{% endblock %}
+{% block content %}
+<div class="card">
+    <div class="card-header">
+        <h2>Confirm Appointment</h2>
+        <p class="field-hint">Acting on behalf of patient: <strong>{{ patient.username }}</strong></p>
+    </div>
+
+    <div style="margin: 1rem 0;">
+        <p><strong>Date:</strong> {{ slot.date }}</p>
+        <p><strong>Time:</strong> {{ slot.start_time.strftime('%H:%M') }} — {{ slot.end_time.strftime('%H:%M') }}</p>
+        <p><strong>Clinician:</strong> {{ slot.clinician.user.username }}</p>
+    </div>
+
+    <p class="field-hint">Hold expires in <span id="countdown">{{ remaining_seconds }}</span> seconds.</p>
+
+    {% set _confirm_action = url_for('schedule.behalf_confirm', patient_id=patient.id, reservation_id=reservation.id) %}
+    <form method="POST" action="{{ _confirm_action }}" style="display:flex; gap:1rem; margin-top:1rem;">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        {{ antireplay_inputs("POST", _confirm_action) }}
+        <button type="submit" class="btn btn-primary">Confirm Appointment</button>
+        <a href="{{ url_for('schedule.available') }}" class="btn">Cancel</a>
+    </form>
+</div>
+
+<script>
+    let s = parseInt(document.getElementById('countdown').textContent, 10);
+    const el = document.getElementById('countdown');
+    const t = setInterval(() => { s--; el.textContent = s; if (s <= 0) clearInterval(t); }, 1000);
+</script>
+{% endblock %}

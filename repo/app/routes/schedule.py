@@ -214,6 +214,178 @@ def cancel(reservation_id):
     return redirect(url_for("schedule.my_appointments"))
 
 
+# ── On-behalf scheduling routes (administrator / front_desk only) ──
+
+def _get_behalf_schedule_patient(patient_id):
+    """Return (User, None) if patient_id is a patient-role user,
+    otherwise return (None, redirect_response)."""
+    from app.models.user import User
+    patient = db.session.get(User, patient_id)
+    if not patient:
+        flash("Patient not found.", "danger")
+        return None, redirect(url_for("schedule.available"))
+    if patient.role != "patient":
+        flash("Selected user is not a patient.", "danger")
+        return None, redirect(url_for("schedule.available"))
+    return patient, None
+
+
+@schedule_bp.route("/behalf/<int:patient_id>/hold/<int:slot_id>", methods=["POST"])
+@role_required("administrator", "front_desk")
+@antireplay
+def behalf_hold(patient_id, slot_id):
+    """Staff places a hold on a slot on behalf of a patient."""
+    import json as _json
+    from app.utils.audit import log_action
+
+    patient, err = _get_behalf_schedule_patient(patient_id)
+    if err:
+        return err
+
+    slot = db.session.get(Slot, slot_id)
+    if not slot:
+        flash("Slot not found.", "danger")
+        return redirect(url_for("schedule.available"))
+
+    if slot.date < date.today():
+        flash("Cannot book a slot in the past.", "danger")
+        return redirect(url_for("schedule.available"))
+
+    if not slot.is_available:
+        flash("This slot is no longer available.", "warning")
+        return redirect(url_for("schedule.available"))
+
+    active_holds = Reservation.query.filter_by(
+        patient_id=patient_id, status="held"
+    ).count()
+    if active_holds >= MAX_SIMULTANEOUS_HOLDS:
+        flash(f"Patient already has {MAX_SIMULTANEOUS_HOLDS} active holds.", "warning")
+        return redirect(url_for("schedule.available"))
+
+    raw_token = request.form.get("request_token")
+    reservation = Reservation(
+        slot_id=slot.id,
+        patient_id=patient_id,
+        status="held",
+        held_at=datetime.now(timezone.utc),
+        expires_at=datetime.now(timezone.utc) + HOLD_DURATION,
+        request_token=_hash_token(raw_token) if raw_token else None,
+    )
+    db.session.add(reservation)
+    db.session.commit()
+
+    log_action(
+        action="on_behalf_hold",
+        resource_type="reservation",
+        resource_id=reservation.id,
+        details=_json.dumps({
+            "actor_id": current_user.id,
+            "actor_role": current_user.role,
+            "patient_id": patient_id,
+            "slot_id": slot_id,
+            "context": "staff held slot on behalf of patient",
+        }),
+    )
+
+    return redirect(url_for("schedule.behalf_confirm_page", patient_id=patient_id, reservation_id=reservation.id))
+
+
+@schedule_bp.route("/behalf/<int:patient_id>/confirm/<int:reservation_id>", methods=["GET"])
+@role_required("administrator", "front_desk")
+def behalf_confirm_page(patient_id, reservation_id):
+    """Staff reviews the held reservation before confirming."""
+    patient, err = _get_behalf_schedule_patient(patient_id)
+    if err:
+        return err
+
+    reservation = db.session.get(Reservation, reservation_id)
+    if not reservation or reservation.patient_id != patient_id:
+        flash("Reservation not found.", "danger")
+        return redirect(url_for("schedule.available"))
+
+    if reservation.is_expired():
+        reservation.status = "expired"
+        db.session.commit()
+        flash("The reservation hold has expired.", "warning")
+        return redirect(url_for("schedule.available"))
+
+    remaining = 0
+    if reservation.expires_at:
+        exp = reservation.expires_at.replace(tzinfo=timezone.utc) if reservation.expires_at.tzinfo is None else reservation.expires_at
+        remaining = max(0, int((exp - datetime.now(timezone.utc)).total_seconds()))
+
+    return render_template(
+        "schedule/behalf_confirm.html",
+        reservation=reservation,
+        slot=reservation.slot,
+        remaining_seconds=remaining,
+        patient=patient,
+    )
+
+
+@schedule_bp.route("/behalf/<int:patient_id>/confirm/<int:reservation_id>", methods=["POST"])
+@role_required("administrator", "front_desk")
+@antireplay
+def behalf_confirm(patient_id, reservation_id):
+    """Staff confirms (books) the held reservation on behalf of a patient."""
+    import json as _json
+    from app.utils.audit import log_action
+
+    patient, err = _get_behalf_schedule_patient(patient_id)
+    if err:
+        return err
+
+    reservation = db.session.get(Reservation, reservation_id)
+    if not reservation or reservation.patient_id != patient_id:
+        flash("Reservation not found.", "danger")
+        return redirect(url_for("schedule.available"))
+
+    if reservation.is_expired():
+        reservation.status = "expired"
+        db.session.commit()
+        flash("The reservation hold has expired.", "warning")
+        return redirect(url_for("schedule.available"))
+
+    if reservation.status == "confirmed":
+        flash("This reservation is already confirmed.", "info")
+        return redirect(url_for("schedule.staff_calendar"))
+
+    reservation.status = "confirmed"
+    reservation.confirmed_at = datetime.now(timezone.utc)
+    reservation.slot.booked_count += 1
+
+    existing_visit = Visit.query.filter_by(
+        patient_id=patient_id,
+        slot_id=reservation.slot_id,
+    ).first()
+    if not existing_visit:
+        visit = Visit(
+            patient_id=patient_id,
+            clinician_id=reservation.slot.clinician_id,
+            slot_id=reservation.slot_id,
+            status="booked",
+        )
+        db.session.add(visit)
+
+    db.session.commit()
+
+    log_action(
+        action="on_behalf_confirm",
+        resource_type="reservation",
+        resource_id=reservation.id,
+        details=_json.dumps({
+            "actor_id": current_user.id,
+            "actor_role": current_user.role,
+            "patient_id": patient_id,
+            "slot_id": reservation.slot_id,
+            "context": "staff confirmed booking on behalf of patient",
+        }),
+    )
+
+    flash("Appointment confirmed!", "success")
+    return redirect(url_for("schedule.staff_calendar"))
+
+
 @schedule_bp.route("/my-appointments")
 @login_required
 def my_appointments():

@@ -1,0 +1,58 @@
+{% if section is not defined %}{% set section = sections[step] %}{% endif %}
+<form hx-post="{{ url_for('assessments.behalf_step', patient_id=patient.id, step=step + 1) }}" hx-target="#assessment-content" hx-swap="innerHTML">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <input type="hidden" name="request_token" value="{{ request_token }}">
+
+    <h3>{{ section.title }}</h3>
+    <p class="field-hint">{{ section.description }}</p>
+
+    {% for q in section.questions %}
+    <div class="form-group" style="margin-top:1rem;">
+        <label>{{ q.text }}</label>
+
+        {% if q.type == 'scale_0_3' %}
+        <div style="display:flex; gap:1rem; flex-wrap:wrap; margin-top:0.25rem;">
+            {% for val, label in [(0, 'Not at all'), (1, 'Several days'), (2, 'More than half'), (3, 'Nearly every day')] %}
+            <label style="display:flex; align-items:center; gap:0.25rem; cursor:pointer;">
+                <input type="radio" name="{{ q.id }}" value="{{ val }}" required
+                       {% if saved_answers.get(q.id)|string == val|string %}checked{% endif %}>
+                {{ label }} ({{ val }})
+            </label>
+            {% endfor %}
+        </div>
+
+        {% elif q.type == 'yes_no' %}
+        <div style="display:flex; gap:1rem; margin-top:0.25rem;">
+            {% for val, label in [('yes', 'Yes'), ('no', 'No')] %}
+            <label style="display:flex; align-items:center; gap:0.25rem; cursor:pointer;">
+                <input type="radio" name="{{ q.id }}" value="{{ val }}" required
+                       {% if saved_answers.get(q.id) == val %}checked{% endif %}>
+                {{ label }}
+            </label>
+            {% endfor %}
+        </div>
+
+        {% elif q.type == 'select' %}
+        <select name="{{ q.id }}" class="form-control" required style="max-width:300px;">
+            <option value="">-- Select --</option>
+            {% for opt in q.options %}
+            <option value="{{ opt }}" {% if saved_answers.get(q.id) == opt %}selected{% endif %}>
+                {{ opt | replace('_', ' ') | title }}
+            </option>
+            {% endfor %}
+        </select>
+        {% endif %}
+    </div>
+    {% endfor %}
+
+    <!-- Carry forward saved answers as hidden fields -->
+    {% for key, val in saved_answers.items() %}
+    <input type="hidden" name="{{ key }}" value="{{ val }}">
+    {% endfor %}
+
+    <div style="display:flex; gap:1rem; margin-top:1.5rem;">
+        <button type="submit" class="btn btn-primary">
+            {% if step + 1 >= total_steps %}Review{% else %}Next{% endif %}
+        </button>
+    </div>
+</form>

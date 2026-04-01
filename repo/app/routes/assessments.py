@@ -237,6 +237,187 @@ def save_draft():
     return '<span class="field-success">Draft saved</span>'
 
 
+# ── On-behalf assessment routes (administrator / front_desk only) ──
+
+def _get_behalf_patient(patient_id):
+    """Return (User, None) if patient_id resolves to a patient-role user,
+    otherwise return (None, redirect_response)."""
+    from app.models.user import User
+    patient = db.session.get(User, patient_id)
+    if not patient:
+        flash("Patient not found.", "danger")
+        return None, redirect(url_for("staff.patient_list"))
+    if patient.role != "patient":
+        flash("Selected user is not a patient.", "danger")
+        return None, redirect(url_for("staff.patient_list"))
+    return patient, None
+
+
+@assessments_bp.route("/behalf/<int:patient_id>/start")
+@role_required("administrator", "front_desk")
+def behalf_start(patient_id):
+    """Staff starts an assessment wizard on behalf of a patient."""
+    patient, err = _get_behalf_patient(patient_id)
+    if err:
+        return err
+
+    template = get_or_create_default_template(db.session)
+    sections = template.questions
+
+    draft = AssessmentDraft.query.filter_by(
+        patient_id=patient_id,
+        visit_id=None,
+        template_id=template.id,
+    ).first()
+
+    current_step = draft.current_step if draft else 0
+    saved_answers = json.loads(draft.partial_answers_json) if draft else {}
+    request_token = str(uuid.uuid4())
+
+    return render_template(
+        "assessments/behalf_wizard.html",
+        template=template,
+        sections=sections,
+        section=sections[current_step],
+        step=current_step,
+        current_step=current_step,
+        total_steps=TOTAL_STEPS,
+        saved_answers=saved_answers,
+        request_token=request_token,
+        patient=patient,
+    )
+
+
+@assessments_bp.route("/behalf/<int:patient_id>/step/<int:step>", methods=["POST"])
+@role_required("administrator", "front_desk")
+def behalf_step(patient_id, step):
+    """Staff saves a wizard step for a patient's in-progress draft."""
+    patient, err = _get_behalf_patient(patient_id)
+    if err:
+        return err
+
+    template = get_or_create_default_template(db.session)
+    sections = template.questions
+
+    answers = {}
+    for key, val in request.form.items():
+        if key not in ("csrf_token", "request_token", "step"):
+            answers[key] = val
+
+    draft = AssessmentDraft.query.filter_by(
+        patient_id=patient_id,
+        visit_id=None,
+        template_id=template.id,
+    ).first()
+
+    if draft:
+        existing = json.loads(draft.partial_answers_json)
+        existing.update(answers)
+        draft.partial_answers_json = json.dumps(existing)
+        draft.current_step = step
+    else:
+        draft = AssessmentDraft(
+            patient_id=patient_id,
+            visit_id=None,
+            template_id=template.id,
+            partial_answers_json=json.dumps(answers),
+            current_step=step,
+        )
+        db.session.add(draft)
+    db.session.commit()
+
+    saved_answers = json.loads(draft.partial_answers_json)
+    request_token = request.form.get("request_token", str(uuid.uuid4()))
+
+    if step >= TOTAL_STEPS:
+        return render_template(
+            "assessments/_behalf_review.html",
+            template=template,
+            sections=sections,
+            answers=saved_answers,
+            request_token=request_token,
+            patient=patient,
+        )
+
+    return render_template(
+        "assessments/_behalf_step.html",
+        template=template,
+        section=sections[step],
+        step=step,
+        total_steps=TOTAL_STEPS,
+        saved_answers=saved_answers,
+        request_token=request_token,
+        patient=patient,
+    )
+
+
+@assessments_bp.route("/behalf/<int:patient_id>/submit", methods=["POST"])
+@role_required("administrator", "front_desk")
+@antireplay
+def behalf_submit(patient_id):
+    """Staff submits completed assessment; result is owned by the patient."""
+    import json as _json
+    from app.utils.audit import log_action
+
+    patient, err = _get_behalf_patient(patient_id)
+    if err:
+        return err
+
+    template = get_or_create_default_template(db.session)
+    request_token = request.form.get("request_token", "")
+
+    # Idempotency — compare against stored hash, not raw token.
+    if request_token:
+        token_hash = _hash_token(request_token)
+        existing = AssessmentResult.query.filter_by(request_token=token_hash).first()
+        if existing:
+            return redirect(url_for("assessments.result", assessment_id=existing.id))
+
+    draft = AssessmentDraft.query.filter_by(
+        patient_id=patient_id,
+        visit_id=None,
+        template_id=template.id,
+    ).first()
+
+    if not draft:
+        flash("No assessment data found. Please start again.", "danger")
+        return redirect(url_for("assessments.behalf_start", patient_id=patient_id))
+
+    answers = json.loads(draft.partial_answers_json)
+    scores = calculate_scores(answers)
+    risk_level, explanations = calculate_risk_level(scores)
+
+    result = AssessmentResult(
+        patient_id=patient_id,
+        visit_id=None,
+        template_id=template.id,
+        template_version=template.version,
+        answers_json=json.dumps(answers),
+        scores_json=json.dumps(scores),
+        risk_level=risk_level,
+        explanation_snapshot_json=json.dumps(explanations),
+        request_token=_hash_token(request_token) if request_token else None,
+    )
+    db.session.add(result)
+    db.session.delete(draft)
+    db.session.commit()
+
+    log_action(
+        action="on_behalf_assessment",
+        resource_type="assessment_result",
+        resource_id=result.id,
+        details=_json.dumps({
+            "actor_id": current_user.id,
+            "actor_role": current_user.role,
+            "patient_id": patient_id,
+            "risk_level": risk_level,
+            "context": "staff submitted assessment on behalf of patient",
+        }),
+    )
+
+    return redirect(url_for("assessments.result", assessment_id=result.id))
+
+
 # Staff view of patient assessments
 @assessments_bp.route("/patient/<int:patient_id>")
 @role_required("administrator", "clinician", "front_desk")

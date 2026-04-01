@@ -12,7 +12,7 @@ def _start_background_scheduler(app):
     """Start a background thread with periodic maintenance jobs.
 
     Jobs registered:
-    - hold_expiry        : expire stale reservation holds every 5 minutes.
+    - hold_expiry        : expire stale reservation holds every 1 minute.
     - reminder_generation: generate pending reminders every 15 minutes.
 
     Guards:
@@ -46,7 +46,7 @@ def _start_background_scheduler(app):
 
         This is the authoritative expiry mechanism — holds expire regardless of
         whether any user navigates to the schedule page (which only triggers the
-        lazy cleanup).  Running every 5 minutes ensures holds never linger more
+        lazy cleanup).  Running every 1 minute ensures holds never linger more
         than ~11 minutes past their 10-minute window (10 min hold + up to 1 min
         until the next sweep).
         """
