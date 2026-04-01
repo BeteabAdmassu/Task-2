@@ -1,10 +1,19 @@
 """Tests for prompt 08 — Service Coverage Zones."""
 
+import uuid
 import pytest
+from datetime import datetime, timezone
 from app.models.user import User
 from app.models.scheduling import Clinician
 from app.models.coverage import CoverageZone, ZoneAssignment, ZoneDeliveryWindow
 from app.extensions import db
+
+
+def _nonce_data():
+    return {
+        "_nonce": str(uuid.uuid4()),
+        "_timestamp": datetime.now(timezone.utc).isoformat(),
+    }
 
 
 def _create_user(app, username, role="patient", password="Password1"):
@@ -56,7 +65,7 @@ def test_create_zone(client, app, db):
     _login(client, "admin_cov2")
     resp = client.post(
         "/coverage/zones",
-        data={"name": "Downtown", "description": "Downtown area", "zip_codes": "10001, 10002"},
+        data={"name": "Downtown", "description": "Downtown area", "zip_codes": "10001, 10002", **_nonce_data()},
         follow_redirects=True,
     )
     assert resp.status_code == 200
@@ -69,8 +78,8 @@ def test_create_zone(client, app, db):
 def test_create_duplicate_zone(client, app, db):
     _create_user(app, "admin_cov3", role="administrator")
     _login(client, "admin_cov3")
-    client.post("/coverage/zones", data={"name": "Uptown", "zip_codes": "20001"}, follow_redirects=True)
-    resp = client.post("/coverage/zones", data={"name": "Uptown", "zip_codes": "20002"}, follow_redirects=True)
+    client.post("/coverage/zones", data={"name": "Uptown", "zip_codes": "20001", **_nonce_data()}, follow_redirects=True)
+    resp = client.post("/coverage/zones", data={"name": "Uptown", "zip_codes": "20002", **_nonce_data()}, follow_redirects=True)
     assert b"already exists" in resp.data
 
 
@@ -97,7 +106,7 @@ def test_assign_clinician_to_zone(client, app, db):
         zid = zone.id
     resp = client.post(
         f"/coverage/zones/{zid}/assign",
-        data={"clinician_id": cid, "assignment_type": "primary"},
+        data={"clinician_id": cid, "assignment_type": "primary", **_nonce_data()},
         follow_redirects=True,
     )
     assert resp.status_code == 200
@@ -143,6 +152,7 @@ def test_create_zone_with_new_fields(client, app, db):
             "distance_band_max": "10.5",
             "min_order_amount": "25.0",
             "delivery_fee": "5.99",
+            **_nonce_data(),
         },
         follow_redirects=True,
     )

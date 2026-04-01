@@ -1,11 +1,20 @@
 """Tests for prompt 05 — health assessments & risk stratification."""
 
 import json
+import uuid
 import pytest
+from datetime import datetime, timezone
 from app.models.user import User
 from app.models.assessment import AssessmentResult, AssessmentDraft
 from app.extensions import db
 from app.utils.scoring import calculate_scores, calculate_risk_level
+
+
+def _nonce_data():
+    return {
+        "_nonce": str(uuid.uuid4()),
+        "_timestamp": datetime.now(timezone.utc).isoformat(),
+    }
 
 
 def _create_user(app, username, role="patient", password="Password1"):
@@ -136,7 +145,7 @@ def test_full_assessment_submission(client, app):
         assert resp.status_code == 200
 
     # Submit
-    resp = client.post("/assessments/submit", data={"request_token": "tok-full"}, follow_redirects=True)
+    resp = client.post("/assessments/submit", data={"request_token": "tok-full", **_nonce_data()}, follow_redirects=True)
     assert resp.status_code == 200
 
     with app.app_context():
@@ -158,9 +167,9 @@ def test_assessment_idempotency(client, app):
     for step in range(1, 6):
         client.post(f"/assessments/step/{step}", data=all_data)
 
-    client.post("/assessments/submit", data={"request_token": "tok-idem"}, follow_redirects=True)
-    # Submit again with same token
-    resp = client.post("/assessments/submit", data={"request_token": "tok-idem"}, follow_redirects=True)
+    client.post("/assessments/submit", data={"request_token": "tok-idem", **_nonce_data()}, follow_redirects=True)
+    # Submit again with same token (different nonce — idempotency key is request_token, not nonce)
+    resp = client.post("/assessments/submit", data={"request_token": "tok-idem", **_nonce_data()}, follow_redirects=True)
     assert resp.status_code == 200
 
     with app.app_context():
@@ -176,7 +185,7 @@ def test_assessment_result_view(client, app):
     all_data["request_token"] = "tok-result"
     for step in range(1, 6):
         client.post(f"/assessments/step/{step}", data=all_data)
-    client.post("/assessments/submit", data={"request_token": "tok-result"}, follow_redirects=True)
+    client.post("/assessments/submit", data={"request_token": "tok-result", **_nonce_data()}, follow_redirects=True)
 
     with app.app_context():
         result = AssessmentResult.query.first()
@@ -203,7 +212,7 @@ def test_staff_can_view_patient_assessments(client, app):
     all_data["request_token"] = "tok-staff"
     for step in range(1, 6):
         client.post(f"/assessments/step/{step}", data=all_data)
-    client.post("/assessments/submit", data={"request_token": "tok-staff"}, follow_redirects=True)
+    client.post("/assessments/submit", data={"request_token": "tok-staff", **_nonce_data()}, follow_redirects=True)
     client.post("/auth/logout")
 
     _login(client, "clin_a1")

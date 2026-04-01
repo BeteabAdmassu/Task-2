@@ -24,6 +24,8 @@
 <h2>Assign Clinician</h2>
 <form method="POST" action="{{ url_for('coverage.assign_clinician', zone_id=zone.id) }}">
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <input type="hidden" name="_nonce" value="{{ generate_nonce() }}">
+    <input type="hidden" name="_timestamp" value="{{ generate_timestamp() }}">
     <div class="form-group">
         <label for="clinician_id">Clinician</label>
         <select id="clinician_id" name="clinician_id" class="form-control">

@@ -1,11 +1,12 @@
 from datetime import date
-from flask import Blueprint, render_template, request, flash, redirect, url_for
+from flask import Blueprint, render_template, request, flash, redirect, url_for, abort
 from flask_login import current_user, login_required
 from app.extensions import db
 from app.models.visit import Visit, VisitTransition
 from app.utils.auth import role_required
 from app.utils.state_machine import transition_visit, VALID_TRANSITIONS, TERMINAL_STATES
 from app.utils.audit import log_action
+from app.utils.antireplay import antireplay
 
 visits_bp = Blueprint("visits", __name__, url_prefix="/visits")
 
@@ -41,7 +42,8 @@ def dashboard_poll():
 
 
 @visits_bp.route("/<int:visit_id>/transition", methods=["POST"])
-@login_required
+@role_required("administrator", "clinician", "front_desk")
+@antireplay
 def transition(visit_id):
     visit = db.session.get(Visit, visit_id)
     if not visit:
@@ -78,5 +80,8 @@ def timeline(visit_id):
     visit = db.session.get(Visit, visit_id)
     if not visit:
         return "Visit not found", 404
+    staff_roles = ("administrator", "clinician", "front_desk")
+    if current_user.role not in staff_roles and visit.patient_id != current_user.id:
+        abort(403)
     transitions = VisitTransition.query.filter_by(visit_id=visit_id).order_by(VisitTransition.timestamp.asc()).all()
     return render_template("visits/_timeline.html", visit=visit, transitions=transitions)

@@ -6,6 +6,7 @@ from app.models.scheduling import (
     Clinician, ScheduleTemplate, Room, Slot, Reservation, Holiday, expire_stale_holds,
 )
 from app.utils.auth import role_required
+from app.utils.antireplay import antireplay
 
 schedule_bp = Blueprint("schedule", __name__, url_prefix="/schedule")
 
@@ -62,6 +63,7 @@ def available():
 
 @schedule_bp.route("/hold/<int:slot_id>", methods=["POST"])
 @login_required
+@antireplay
 def hold(slot_id):
     slot = db.session.get(Slot, slot_id)
     if not slot:
@@ -127,6 +129,7 @@ def confirm_page(reservation_id):
 
 @schedule_bp.route("/confirm/<int:reservation_id>", methods=["POST"])
 @login_required
+@antireplay
 def confirm(reservation_id):
     reservation = db.session.get(Reservation, reservation_id)
     if not reservation or reservation.patient_id != current_user.id:
@@ -154,6 +157,7 @@ def confirm(reservation_id):
 
 @schedule_bp.route("/cancel/<int:reservation_id>", methods=["POST"])
 @login_required
+@antireplay
 def cancel(reservation_id):
     reservation = db.session.get(Reservation, reservation_id)
     if not reservation:

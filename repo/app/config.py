@@ -30,7 +30,16 @@ class TestingConfig(Config):
 
 
 class ProductionConfig(Config):
-    pass
+    @staticmethod
+    def validate():
+        missing = [
+            name for name in ("SECRET_KEY", "ENCRYPTION_KEY")
+            if not os.environ.get(name)
+        ]
+        if missing:
+            raise RuntimeError(
+                f"Production requires these environment variables: {', '.join(missing)}"
+            )
 
 
 config_by_name = {

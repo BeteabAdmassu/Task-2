@@ -13,10 +13,23 @@ REPLAY_WINDOW = timedelta(minutes=5)
 def antireplay(f):
     @wraps(f)
     def decorated(*args, **kwargs):
+        # Only enforce anti-replay on state-mutating methods.
+        if request.method not in ("POST", "PUT", "PATCH", "DELETE"):
+            return f(*args, **kwargs)
+
+        # Lazily purge expired nonces so the table doesn't grow unbounded.
+        try:
+            SignedRequest.query.filter(
+                SignedRequest.expires_at < datetime.now(timezone.utc)
+            ).delete()
+            db.session.commit()
+        except Exception:
+            db.session.rollback()
+
         nonce = request.headers.get("X-Nonce") or request.form.get("_nonce")
         ts_header = request.headers.get("X-Timestamp") or request.form.get("_timestamp")
         if not nonce or not ts_header:
-            return f(*args, **kwargs)  # graceful fallback
+            return jsonify({"error": "Missing nonce or timestamp"}), 400
         try:
             ts = datetime.fromisoformat(ts_header)
             if ts.tzinfo is None:

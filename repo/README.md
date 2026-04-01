@@ -7,6 +7,18 @@ A comprehensive clinic operations platform built with Flask, SQLite, and HTMX.
 - Python 3.10+
 - Docker (for E2E tests)
 
+## Environment Variables (Production)
+
+The following environment variables **must** be set when running with `FLASK_ENV=production`:
+
+| Variable | Description |
+|---|---|
+| `SECRET_KEY` | Stable secret key for Flask session signing (e.g. `python -c "import secrets; print(secrets.token_hex(32))"`) |
+| `ENCRYPTION_KEY` | Stable Fernet key for field-level encryption (e.g. `python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"`) |
+
+The app will raise `RuntimeError` at startup if either is missing in production.
+In development and testing, random/default keys are generated automatically.
+
 ## Quick Start
 
 ```bash

@@ -11,8 +11,12 @@ def create_app(config_name=None):
     if config_name is None:
         config_name = os.environ.get("FLASK_ENV", "production")
 
+    cfg = config_by_name[config_name]
+    if hasattr(cfg, "validate"):
+        cfg.validate()
+
     app = Flask(__name__)
-    app.config.from_object(config_by_name[config_name])
+    app.config.from_object(cfg)
 
     # Initialize extensions
     db.init_app(app)
@@ -60,6 +64,15 @@ def create_app(config_name=None):
             token = str(uuid.uuid4())
             return token
         return dict(generate_request_token=request_token)
+
+    @app.context_processor
+    def inject_antireplay_helpers():
+        from datetime import datetime, timezone as _tz
+        def generate_nonce():
+            return str(uuid.uuid4())
+        def generate_timestamp():
+            return datetime.now(_tz.utc).isoformat()
+        return dict(generate_nonce=generate_nonce, generate_timestamp=generate_timestamp)
 
     # Error handlers
     from flask import render_template, jsonify, request as flask_request

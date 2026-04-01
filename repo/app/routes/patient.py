@@ -8,6 +8,7 @@ from app.models.assessment import AssessmentResult
 from app.models.scheduling import Reservation, Slot
 from app.utils.encryption import encrypt_value, decrypt_value, mask_id
 from app.utils.auth import role_required
+from app.utils.antireplay import antireplay
 
 patient_bp = Blueprint("patient", __name__, url_prefix="/patient")
 
@@ -113,6 +114,7 @@ def _save_demographics(demo, data, changed_by_id):
 
 @patient_bp.route("/demographics", methods=["GET", "POST"])
 @login_required
+@antireplay
 def demographics():
     if current_user.role != "patient":
         flash("Only patients can access this page.", "warning")
@@ -231,6 +233,7 @@ def export_data():
 
 @patient_bp.route("/delete-account", methods=["POST"])
 @login_required
+@antireplay
 def delete_account():
     if current_user.role != "patient":
         return jsonify({"error": "Access denied"}), 403

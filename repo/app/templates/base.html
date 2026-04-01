@@ -74,5 +74,15 @@
     </footer>
 
     {% block extra_scripts %}{% endblock %}
+    <script>
+    /* Inject a fresh nonce + timestamp into every HTMX POST so anti-replay
+       is satisfied without needing per-form hidden fields for HTMX requests. */
+    document.body.addEventListener('htmx:configRequest', function(evt) {
+        if (evt.detail.verb === 'post') {
+            evt.detail.parameters['_nonce'] = crypto.randomUUID();
+            evt.detail.parameters['_timestamp'] = new Date().toISOString();
+        }
+    });
+    </script>
 </body>
 </html>

@@ -6,6 +6,7 @@ from app.extensions import db
 from app.models.assessment import AssessmentTemplate, AssessmentResult, AssessmentDraft
 from app.utils.scoring import calculate_scores, calculate_risk_level, get_or_create_default_template
 from app.utils.auth import role_required
+from app.utils.antireplay import antireplay
 
 assessments_bp = Blueprint("assessments", __name__, url_prefix="/assessments")
 
@@ -108,6 +109,7 @@ def wizard_step(step):
 
 @assessments_bp.route("/submit", methods=["POST"])
 @login_required
+@antireplay
 def submit():
     template = get_or_create_default_template(db.session)
     visit_id = request.form.get("visit_id", type=int)

@@ -1,11 +1,13 @@
 import re
 from datetime import datetime, timezone, timedelta
+from urllib.parse import urlparse
 from flask import Blueprint, render_template, request, redirect, url_for, flash, jsonify
 from flask_login import login_user, logout_user, login_required, current_user
 from markupsafe import escape
 from app.extensions import db
 from app.models.user import User, LoginAttempt
 from app.utils.audit import log_action
+from app.utils.antireplay import antireplay
 
 auth_bp = Blueprint("auth", __name__, url_prefix="/auth")
 
@@ -80,6 +82,14 @@ def _record_attempt(username, ip_address, user_agent, success):
     )
     db.session.add(attempt)
     db.session.commit()
+
+
+def _is_safe_redirect_url(url):
+    """Return True only for same-origin relative paths (no scheme, no netloc)."""
+    if not url:
+        return False
+    parsed = urlparse(url)
+    return not parsed.scheme and not parsed.netloc and url.startswith("/")
 
 
 def _get_dashboard_for_role(role):
@@ -178,7 +188,7 @@ def login():
             log_action("login_success", "user", user.id, {"username": username, "ip": ip})
             login_user(user)
             next_page = request.args.get("next")
-            destination = next_page or url_for(_get_dashboard_for_role(user.role))
+            destination = next_page if _is_safe_redirect_url(next_page) else url_for(_get_dashboard_for_role(user.role))
             if request.headers.get("HX-Request"):
                 resp = jsonify({"redirect": destination})
                 resp.headers["HX-Redirect"] = destination
@@ -208,6 +218,7 @@ def logout():
 
 @auth_bp.route("/change-password", methods=["GET", "POST"])
 @login_required
+@antireplay
 def change_password():
     if request.method == "POST":
         current_password = request.form.get("current_password", "")

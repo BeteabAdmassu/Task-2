@@ -4,6 +4,7 @@ from app.models.coverage import CoverageZone, ZoneAssignment, ZoneDeliveryWindow
 from app.models.scheduling import Clinician
 from app.utils.auth import role_required
 from app.utils.audit import log_action
+from app.utils.antireplay import antireplay
 
 coverage_bp = Blueprint("coverage", __name__, url_prefix="/coverage")
 
@@ -17,6 +18,7 @@ def zones():
 
 @coverage_bp.route("/zones", methods=["POST"])
 @role_required("administrator")
+@antireplay
 def create_zone():
     name = request.form.get("name", "").strip()
     description = request.form.get("description", "").strip()
@@ -68,6 +70,7 @@ def zone_detail(zone_id):
 
 @coverage_bp.route("/zones/<int:zone_id>/assign", methods=["POST"])
 @role_required("administrator")
+@antireplay
 def assign_clinician(zone_id):
     zone = db.session.get(CoverageZone, zone_id)
     if not zone:

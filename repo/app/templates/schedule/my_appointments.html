@@ -21,6 +21,8 @@
                     {% if r.status in ('held', 'confirmed') %}
                     <form method="POST" action="{{ url_for('schedule.cancel', reservation_id=r.id) }}" style="display:inline;">
                         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                        <input type="hidden" name="_nonce" value="{{ generate_nonce() }}">
+                        <input type="hidden" name="_timestamp" value="{{ generate_timestamp() }}">
                         <button type="submit" class="btn btn-danger" style="padding:0.25rem 0.5rem; font-size:0.85rem;">Cancel</button>
                     </form>
                     {% endif %}
