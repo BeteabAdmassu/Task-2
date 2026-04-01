@@ -1,0 +1,8 @@
+*.db
+*.pyc
+__pycache__
+.pytest_cache
+certs/
+*.egg-info
+.git
+meridiancare.db
