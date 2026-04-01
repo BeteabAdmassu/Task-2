@@ -4,8 +4,8 @@ A comprehensive clinic operations platform built with Flask, SQLite, and HTMX.
 
 ## Requirements
 
-- Python 3.10+
-- Docker (for E2E tests)
+- Python 3.10+ (local development and unit tests)
+- Docker (production deployment and E2E tests)
 
 ## Environment Variables (Production)
 
@@ -26,11 +26,56 @@ In development and testing, random/default keys are generated automatically.
 # Install dependencies
 pip install -r requirements.txt
 
-# Run the application (HTTPS on port 5000)
-python run.py
+# Run in development mode (auto-generates ephemeral keys — not for production)
+FLASK_ENV=development python run.py
 ```
 
 Visit `https://localhost:5000` in your browser. Accept the self-signed certificate warning.
+
+> **Note:** `python run.py` defaults to `production` mode. Set `FLASK_ENV=development` for local
+> development (ephemeral keys are generated automatically). For production, set the required
+> environment variables listed above before starting the app.
+
+## Docker (Production Deployment)
+
+Docker is the recommended way to run MeridianCare in production. The `Dockerfile` builds a
+self-contained image that runs under `FLASK_ENV=production` and generates its own self-signed
+TLS certificate at build time.
+
+### Build and run manually
+
+```bash
+# Build the image
+docker build -t meridiancare .
+
+# Generate secrets (run once, store the output securely)
+export SECRET_KEY=$(python -c "import secrets; print(secrets.token_hex(32))")
+export ENCRYPTION_KEY=$(python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())")
+export REQUEST_SIGNING_SECRET=$(python -c "import secrets; print(secrets.token_hex(32))")
+
+# Run the container
+docker run -d \
+  -p 5000:5000 \
+  -e FLASK_ENV=production \
+  -e SECRET_KEY="$SECRET_KEY" \
+  -e ENCRYPTION_KEY="$ENCRYPTION_KEY" \
+  -e REQUEST_SIGNING_SECRET="$REQUEST_SIGNING_SECRET" \
+  --name meridiancare \
+  meridiancare
+```
+
+Visit `https://localhost:5000`. Accept the self-signed certificate warning (replace with a CA-issued
+certificate for internet-facing deployments).
+
+> **Important:** The three secret environment variables must be kept stable across restarts.
+> Changing `SECRET_KEY` invalidates all active sessions; changing `ENCRYPTION_KEY` makes
+> previously encrypted patient data unreadable.
+
+### `docker-compose.yml` — E2E testing only
+
+The included `docker-compose.yml` contains **hardcoded example keys** intended solely for the
+automated E2E test suite. **Do not use it for any real deployment.** Always supply your own
+secrets via environment variables as shown above.
 
 ## Running Tests
 
@@ -74,8 +119,8 @@ repo/
 ├── tests/                   # Unit & integration tests
 │   └── e2e/                 # Playwright E2E tests
 ├── run_tests.sh             # Single script to run ALL tests
-├── Dockerfile               # Container for E2E testing
-├── docker-compose.yml       # Docker Compose config
+├── Dockerfile               # Production container image
+├── docker-compose.yml       # Docker Compose config (E2E test keys — not for production)
 ├── requirements.txt         # Production dependencies
 ├── requirements-test.txt    # Test dependencies
 └── run.py                   # Entry point

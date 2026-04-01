@@ -81,7 +81,7 @@
         <label for="insurance_id">Insurance ID</label>
         {% if demo and demo.insurance_id_encrypted %}
         <div style="display:flex; gap:0.5rem; align-items:center; margin-bottom:0.25rem;">
-            <span id="insurance-masked">{{ mask_id(demo.insurance_id_encrypted[:8] if demo.insurance_id_encrypted else '') }}</span>
+            <span id="insurance-masked">{{ mask_encrypted_id(demo.insurance_id_encrypted) }}</span>
             <button type="button" class="btn btn-secondary" style="padding:0.2rem 0.5rem; font-size:0.8rem;"
                     hx-post="{{ url_for('patient.reveal_field') }}" hx-vals='{"field":"insurance_id"}'
                     hx-target="#insurance-masked" hx-swap="innerHTML">Show</button>
@@ -95,7 +95,7 @@
         <label for="government_id">Government ID (optional)</label>
         {% if demo and demo.government_id_encrypted %}
         <div style="display:flex; gap:0.5rem; align-items:center; margin-bottom:0.25rem;">
-            <span id="govid-masked">{{ mask_id(demo.government_id_encrypted[:8] if demo.government_id_encrypted else '') }}</span>
+            <span id="govid-masked">{{ mask_encrypted_id(demo.government_id_encrypted) }}</span>
             <button type="button" class="btn btn-secondary" style="padding:0.2rem 0.5rem; font-size:0.8rem;"
                     hx-post="{{ url_for('patient.reveal_field') }}" hx-vals='{"field":"government_id"}'
                     hx-target="#govid-masked" hx-swap="innerHTML">Show</button>

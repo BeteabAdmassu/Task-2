@@ -6,7 +6,7 @@ from app.extensions import db
 from app.models.demographics import PatientDemographics, DemographicsChangeLog
 from app.models.assessment import AssessmentResult
 from app.models.scheduling import Reservation, Slot
-from app.utils.encryption import encrypt_value, decrypt_value, mask_id
+from app.utils.encryption import encrypt_value, decrypt_value, mask_id, mask_encrypted_id
 from app.utils.auth import role_required
 from app.utils.antireplay import antireplay
 
@@ -134,10 +134,14 @@ def demographics():
                 return render_template(
                     "patient/_demographics_form.html",
                     demo=demo, errors=errors, data=data, mask_id=mask_id,
+                    mask_encrypted_id=mask_encrypted_id,
                 )
             for e in errors:
                 flash(e, "danger")
-            return render_template("patient/demographics.html", demo=demo, data=data, mask_id=mask_id)
+            return render_template(
+                "patient/demographics.html", demo=demo, data=data, mask_id=mask_id,
+                mask_encrypted_id=mask_encrypted_id,
+            )
 
         if not demo:
             demo = PatientDemographics(user_id=current_user.id)
@@ -160,7 +164,10 @@ def demographics():
             return resp
         return redirect(url_for("patient.demographics"))
 
-    return render_template("patient/demographics.html", demo=demo, mask_id=mask_id)
+    return render_template(
+        "patient/demographics.html", demo=demo, mask_id=mask_id,
+        mask_encrypted_id=mask_encrypted_id,
+    )
 
 
 @patient_bp.route("/demographics/reveal", methods=["POST"])
