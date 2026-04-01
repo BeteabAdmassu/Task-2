@@ -3,7 +3,7 @@
 import pytest
 from app.models.user import User
 from app.models.scheduling import Clinician
-from app.models.coverage import CoverageZone, ZoneAssignment
+from app.models.coverage import CoverageZone, ZoneAssignment, ZoneDeliveryWindow
 from app.extensions import db
 
 
@@ -128,3 +128,63 @@ def test_check_coverage_not_covered(client, app, db):
 def test_check_coverage_no_zip(client, app, db):
     resp = client.get("/coverage/check?zip=")
     assert resp.status_code == 400
+
+
+def test_create_zone_with_new_fields(client, app, db):
+    _create_user(app, "admin_cov_nf", role="administrator")
+    _login(client, "admin_cov_nf")
+    resp = client.post(
+        "/coverage/zones",
+        data={
+            "name": "NewFieldZone",
+            "description": "Zone with new fields",
+            "zip_codes": "60001, 60002",
+            "distance_band_min": "0",
+            "distance_band_max": "10.5",
+            "min_order_amount": "25.0",
+            "delivery_fee": "5.99",
+        },
+        follow_redirects=True,
+    )
+    assert resp.status_code == 200
+    with app.app_context():
+        zone = CoverageZone.query.filter_by(name="NewFieldZone").first()
+        assert zone is not None
+        assert zone.distance_band_min == 0
+        assert zone.distance_band_max == 10.5
+        assert zone.min_order_amount == 25.0
+        assert zone.delivery_fee == 5.99
+
+
+def test_check_coverage_returns_fee_and_minimum(client, app, db):
+    from datetime import time as dt_time
+    with app.app_context():
+        zone = CoverageZone(
+            name="FeeZone",
+            zip_codes_json=["70001"],
+            is_active=True,
+            delivery_fee=4.99,
+            min_order_amount=15.0,
+        )
+        db.session.add(zone)
+        db.session.commit()
+        window = ZoneDeliveryWindow(
+            zone_id=zone.id,
+            day_of_week="all",
+            start_time=dt_time(9, 0),
+            end_time=dt_time(17, 0),
+        )
+        db.session.add(window)
+        db.session.commit()
+    resp = client.get("/coverage/check?zip=70001")
+    assert resp.status_code == 200
+    data = resp.get_json()
+    assert data["covered"] is True
+    assert len(data["zones"]) == 1
+    z = data["zones"][0]
+    assert z["delivery_fee"] == 4.99
+    assert z["min_order_amount"] == 15.0
+    assert len(z["delivery_windows"]) == 1
+    assert z["delivery_windows"][0]["day_of_week"] == "all"
+    assert z["delivery_windows"][0]["start_time"] == "09:00"
+    assert z["delivery_windows"][0]["end_time"] == "17:00"

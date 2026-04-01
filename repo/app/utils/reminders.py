@@ -13,9 +13,11 @@ def generate_pending_reminders():
 
     - Confirmed reservations with slot date ~24h from now that lack an appointment reminder.
     - Patients whose last assessment was >90 days ago that lack a reassessment reminder.
+    - Auto-expire reminders for canceled reservations.
     """
     _generate_appointment_reminders()
     _generate_reassessment_reminders()
+    _expire_canceled_reservation_reminders()
 
 
 def _generate_appointment_reminders():
@@ -35,19 +37,29 @@ def _generate_appointment_reminders():
     )
 
     for res in confirmed:
-        # Check if an appointment reminder already exists for this patient + date
+        # Dedup by patient_id + related_entity_type + related_entity_id
         existing = Reminder.query.filter_by(
+            patient_id=res.patient_id,
+            related_entity_type="reservation",
+            related_entity_id=res.id,
+        ).first()
+        if existing:
+            continue
+        # Also check legacy dedup by patient + type + date
+        existing_legacy = Reminder.query.filter_by(
             patient_id=res.patient_id,
             type="appointment",
             due_date=res.slot.date,
         ).first()
-        if not existing:
+        if not existing_legacy:
             reminder = Reminder(
                 patient_id=res.patient_id,
                 type="appointment",
                 message=f"You have an appointment on {res.slot.date}.",
                 due_date=res.slot.date,
                 status="pending",
+                related_entity_type="reservation",
+                related_entity_id=res.id,
             )
             db.session.add(reminder)
 
@@ -77,19 +89,44 @@ def _generate_reassessment_reminders():
                 submitted = submitted.replace(tzinfo=timezone.utc)
             if submitted < cutoff:
                 # Check if a pending reassessment reminder already exists
+                # Dedup by patient_id + related_entity_type + related_entity_id
                 existing = Reminder.query.filter_by(
+                    patient_id=patient.id,
+                    related_entity_type="assessment",
+                    related_entity_id=latest.id,
+                ).first()
+                if existing:
+                    continue
+                # Also check legacy dedup
+                existing_legacy = Reminder.query.filter_by(
                     patient_id=patient.id,
                     type="reassessment",
                     status="pending",
                 ).first()
-                if not existing:
+                if not existing_legacy:
                     reminder = Reminder(
                         patient_id=patient.id,
                         type="reassessment",
                         message="It has been over 90 days since your last assessment. Please schedule a reassessment.",
                         due_date=today,
                         status="pending",
+                        related_entity_type="assessment",
+                        related_entity_id=latest.id,
                     )
                     db.session.add(reminder)
 
+    db.session.commit()
+
+
+def _expire_canceled_reservation_reminders():
+    """Auto-expire reminders whose related reservation has been canceled."""
+    canceled_reservations = Reservation.query.filter_by(status="canceled").all()
+    for res in canceled_reservations:
+        pending_reminders = Reminder.query.filter_by(
+            related_entity_type="reservation",
+            related_entity_id=res.id,
+            status="pending",
+        ).all()
+        for rem in pending_reminders:
+            rem.status = "expired"
     db.session.commit()

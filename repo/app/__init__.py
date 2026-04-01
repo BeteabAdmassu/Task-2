@@ -1,4 +1,5 @@
 import os
+import uuid
 from flask import Flask
 from app.config import config_by_name
 from app.extensions import db, csrf, migrate, login_manager
@@ -51,6 +52,14 @@ def create_app(config_name=None):
     app.register_blueprint(audit_bp)
     app.register_blueprint(reminders_bp)
     app.register_blueprint(observability_bp)
+
+    # Template helpers
+    @app.context_processor
+    def inject_request_token():
+        def request_token():
+            token = str(uuid.uuid4())
+            return token
+        return dict(generate_request_token=request_token)
 
     # Error handlers
     from flask import render_template, jsonify, request as flask_request

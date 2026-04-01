@@ -1,6 +1,6 @@
 from flask import Blueprint, render_template, request, flash, redirect, url_for, jsonify
 from app.extensions import db
-from app.models.coverage import CoverageZone, ZoneAssignment
+from app.models.coverage import CoverageZone, ZoneAssignment, ZoneDeliveryWindow
 from app.models.scheduling import Clinician
 from app.utils.auth import role_required
 from app.utils.audit import log_action
@@ -26,6 +26,11 @@ def create_zone():
         flash("Zone name is required.", "danger")
         return redirect(url_for("coverage.zones"))
 
+    distance_band_min = request.form.get("distance_band_min", 0, type=float)
+    distance_band_max = request.form.get("distance_band_max", 0, type=float)
+    min_order_amount = request.form.get("min_order_amount", 0, type=float)
+    delivery_fee = request.form.get("delivery_fee", 0, type=float)
+
     zip_codes = [z.strip() for z in zip_codes_raw.split(",") if z.strip()]
 
     existing = CoverageZone.query.filter_by(name=name).first()
@@ -33,7 +38,15 @@ def create_zone():
         flash("A zone with this name already exists.", "danger")
         return redirect(url_for("coverage.zones"))
 
-    zone = CoverageZone(name=name, description=description, zip_codes_json=zip_codes)
+    zone = CoverageZone(
+        name=name,
+        description=description,
+        zip_codes_json=zip_codes,
+        distance_band_min=distance_band_min,
+        distance_band_max=distance_band_max,
+        min_order_amount=min_order_amount,
+        delivery_fee=delivery_fee,
+    )
     db.session.add(zone)
     db.session.commit()
 
@@ -99,7 +112,20 @@ def check_coverage():
     for zone in zones:
         zips = zone.zip_codes_json or []
         if zip_code in zips:
-            matching.append({"id": zone.id, "name": zone.name})
+            windows = []
+            for w in zone.delivery_windows.all():
+                windows.append({
+                    "day_of_week": w.day_of_week,
+                    "start_time": w.start_time.strftime("%H:%M") if w.start_time else None,
+                    "end_time": w.end_time.strftime("%H:%M") if w.end_time else None,
+                })
+            matching.append({
+                "id": zone.id,
+                "name": zone.name,
+                "delivery_fee": zone.delivery_fee,
+                "min_order_amount": zone.min_order_amount,
+                "delivery_windows": windows,
+            })
 
     if matching:
         return jsonify({"covered": True, "zones": matching})

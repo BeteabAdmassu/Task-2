@@ -5,6 +5,7 @@ from flask_login import login_user, logout_user, login_required, current_user
 from markupsafe import escape
 from app.extensions import db
 from app.models.user import User, LoginAttempt
+from app.utils.audit import log_action
 
 auth_bp = Blueprint("auth", __name__, url_prefix="/auth")
 
@@ -172,8 +173,9 @@ def login():
             )
 
         user = User.query.filter_by(username=username).first()
-        if user and user.check_password(password):
+        if user and user.is_active and user.check_password(password):
             _record_attempt(username, ip, ua, success=True)
+            log_action("login_success", "user", user.id, {"username": username, "ip": ip})
             login_user(user)
             next_page = request.args.get("next")
             destination = next_page or url_for(_get_dashboard_for_role(user.role))
@@ -184,6 +186,7 @@ def login():
             return redirect(destination)
         else:
             _record_attempt(username, ip, ua, success=False)
+            log_action("login_failed", "user", None, {"username": username, "ip": ip})
             msg = "Invalid username or password."
             if request.headers.get("HX-Request"):
                 return render_template(

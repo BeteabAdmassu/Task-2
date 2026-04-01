@@ -1,4 +1,5 @@
 import uuid
+import time
 from datetime import datetime, timezone, timedelta
 from flask import g, request, session, redirect, url_for, flash
 from flask_login import current_user, logout_user
@@ -11,6 +12,10 @@ def register_middleware(app):
     @app.before_request
     def set_correlation_id():
         g.correlation_id = request.headers.get("X-Correlation-ID", str(uuid.uuid4()))
+
+    @app.before_request
+    def record_request_start():
+        g.request_start_time = time.time()
 
     @app.before_request
     def check_session_timeout():
@@ -48,7 +53,24 @@ def register_middleware(app):
         response.headers["X-Correlation-ID"] = correlation_id
         logger = logging.getLogger("meridiancare.request")
         extra = {"correlation_id": correlation_id}
-        logger.info(
-            "%s %s %s", request.method, request.path, response.status_code, extra=extra
-        )
+
+        start_time = getattr(g, "request_start_time", None)
+        if start_time is not None:
+            duration_ms = (time.time() - start_time) * 1000
+            if duration_ms > 500:
+                logger.warning(
+                    "%s %s %s duration=%.1fms (SLOW)",
+                    request.method, request.path, response.status_code, duration_ms,
+                    extra=extra,
+                )
+            else:
+                logger.info(
+                    "%s %s %s duration=%.1fms",
+                    request.method, request.path, response.status_code, duration_ms,
+                    extra=extra,
+                )
+        else:
+            logger.info(
+                "%s %s %s", request.method, request.path, response.status_code, extra=extra
+            )
         return response

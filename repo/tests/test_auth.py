@@ -224,6 +224,23 @@ def test_password_hashed_not_plaintext(client, app):
         assert not user.check_password("wrong")
 
 
+def test_deactivated_user_cannot_login(client, app):
+    with app.app_context():
+        from app.models.user import User
+        from app.extensions import db
+
+        user = User(username="deactivated_user", is_active=False)
+        user.set_password("Password1")
+        db.session.add(user)
+        db.session.commit()
+
+        resp = client.post(
+            "/auth/login",
+            data={"username": "deactivated_user", "password": "Password1"},
+        )
+        assert b"Invalid username or password" in resp.data
+
+
 def test_login_attempt_recording(client, app):
     with app.app_context():
         from app.models.user import LoginAttempt

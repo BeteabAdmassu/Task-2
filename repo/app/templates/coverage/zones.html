@@ -25,13 +25,16 @@
 <h2>Existing Zones</h2>
 <table class="table">
     <thead>
-        <tr><th>Name</th><th>ZIP Codes</th><th>Active</th><th>Actions</th></tr>
+        <tr><th>Name</th><th>ZIP Codes</th><th>Distance</th><th>Min Order</th><th>Fee</th><th>Active</th><th>Actions</th></tr>
     </thead>
     <tbody>
         {% for zone in zones %}
         <tr>
             <td>{{ zone.name }}</td>
             <td>{{ (zone.zip_codes_json or []) | join(', ') }}</td>
+            <td>{{ zone.distance_band_min }} - {{ zone.distance_band_max }}</td>
+            <td>{{ zone.min_order_amount }}</td>
+            <td>{{ zone.delivery_fee }}</td>
             <td>{{ 'Yes' if zone.is_active else 'No' }}</td>
             <td><a href="{{ url_for('coverage.zone_detail', zone_id=zone.id) }}" class="btn btn-sm btn-secondary">View</a></td>
         </tr>

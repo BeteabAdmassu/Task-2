@@ -1,7 +1,7 @@
 """Tests for prompt 11 — Reminders & Reassessments."""
 
 import pytest
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta, timezone
 from app.models.user import User
 from app.models.reminder import Reminder
 from app.extensions import db
@@ -62,6 +62,7 @@ def test_dismiss_reminder(client, app, db):
     with app.app_context():
         r = db.session.get(Reminder, rid)
         assert r.status == "dismissed"
+        assert r.dismissed_at is not None
 
 
 def test_dismiss_other_user_reminder_denied(client, app, db):
@@ -111,9 +112,35 @@ def test_reminder_model_fields(app, db):
         assert fetched.message == "Test msg"
 
 
+def test_reminder_new_fields(app, db):
+    """Test that the new model fields exist and work correctly."""
+    uid = _create_user(app, "pat_rem_fields")
+    with app.app_context():
+        now = datetime.now(timezone.utc)
+        r = Reminder(
+            patient_id=uid, type="appointment",
+            message="Test fields", due_date=date.today(), status="pending",
+            related_entity_type="reservation",
+            related_entity_id=42,
+            seen_at=now,
+            acted_at=now,
+            dismissed_at=now,
+            expires_at=now,
+        )
+        db.session.add(r)
+        db.session.commit()
+        fetched = db.session.get(Reminder, r.id)
+        assert fetched.related_entity_type == "reservation"
+        assert fetched.related_entity_id == 42
+        assert fetched.seen_at is not None
+        assert fetched.acted_at is not None
+        assert fetched.dismissed_at is not None
+        assert fetched.expires_at is not None
+
+
 def test_auto_generate_appointment_reminder(client, app, db):
     """Confirmed reservation with slot 24h away should generate an appointment reminder."""
-    from datetime import datetime, timezone, timedelta, time
+    from datetime import time
     from app.models.scheduling import Clinician, Slot, Reservation
     from app.utils.reminders import generate_pending_reminders
 
@@ -147,11 +174,12 @@ def test_auto_generate_appointment_reminder(client, app, db):
         ).first()
         assert reminder is not None
         assert reminder.status == "pending"
+        assert reminder.related_entity_type == "reservation"
+        assert reminder.related_entity_id == res.id
 
 
 def test_auto_generate_reassessment_reminder(client, app, db):
     """Patient with last assessment >90 days ago should get a reassessment reminder."""
-    from datetime import datetime, timezone, timedelta
     from app.models.assessment import AssessmentTemplate, AssessmentResult
     from app.utils.reminders import generate_pending_reminders
 
@@ -180,11 +208,12 @@ def test_auto_generate_reassessment_reminder(client, app, db):
         ).first()
         assert reminder is not None
         assert "90 days" in reminder.message
+        assert reminder.related_entity_type == "assessment"
+        assert reminder.related_entity_id == result.id
 
 
 def test_auto_generate_no_duplicate_reminders(client, app, db):
     """Running generate_pending_reminders twice should not create duplicates."""
-    from datetime import datetime, timezone, timedelta
     from app.models.assessment import AssessmentTemplate, AssessmentResult
     from app.utils.reminders import generate_pending_reminders
 
@@ -213,3 +242,108 @@ def test_auto_generate_no_duplicate_reminders(client, app, db):
             patient_id=uid, type="reassessment", status="pending"
         ).count()
         assert count == 1
+
+
+def test_expire_canceled_reservation_reminders(client, app, db):
+    """Reminders for canceled reservations should be auto-expired."""
+    from datetime import time
+    from app.models.scheduling import Clinician, Slot, Reservation
+    from app.utils.reminders import generate_pending_reminders
+
+    uid = _create_user(app, "pat_expire1")
+    clin_uid = _create_user(app, "clin_expire1", role="clinician")
+    with app.app_context():
+        clinician = Clinician(user_id=clin_uid, specialty="General")
+        db.session.add(clinician)
+        db.session.flush()
+
+        tomorrow = (datetime.now(timezone.utc) + timedelta(hours=24)).date()
+        slot = Slot(
+            clinician_id=clinician.id, date=tomorrow,
+            start_time=time(10, 0), end_time=time(10, 15),
+            capacity=1, booked_count=1, status="available",
+        )
+        db.session.add(slot)
+        db.session.flush()
+
+        res = Reservation(
+            slot_id=slot.id, patient_id=uid, status="confirmed",
+            confirmed_at=datetime.now(timezone.utc),
+        )
+        db.session.add(res)
+        db.session.commit()
+
+        # Generate reminder first
+        generate_pending_reminders()
+        reminder = Reminder.query.filter_by(
+            patient_id=uid, type="appointment", related_entity_id=res.id
+        ).first()
+        assert reminder is not None
+        assert reminder.status == "pending"
+
+        # Cancel the reservation
+        res.status = "canceled"
+        db.session.commit()
+
+        # Run again — should expire the reminder
+        generate_pending_reminders()
+        db.session.refresh(reminder)
+        assert reminder.status == "expired"
+
+
+def test_reminder_count_endpoint(client, app, db):
+    """GET /reminders/patient/count returns badge HTML for pending reminders."""
+    uid = _create_user(app, "pat_count1")
+    with app.app_context():
+        r = Reminder(
+            patient_id=uid, type="appointment",
+            message="Count test", due_date=date.today(),
+            status="pending"
+        )
+        db.session.add(r)
+        db.session.commit()
+    _login(client, "pat_count1")
+    resp = client.get("/reminders/patient/count")
+    assert resp.status_code == 200
+    assert b"1" in resp.data
+    assert b"badge" in resp.data
+
+
+def test_reminder_count_zero(client, app, db):
+    """GET /reminders/patient/count returns empty when no pending reminders."""
+    _create_user(app, "pat_count2")
+    _login(client, "pat_count2")
+    resp = client.get("/reminders/patient/count")
+    assert resp.status_code == 200
+    assert resp.data.strip() == b""
+
+
+def test_admin_config_page(client, app, db):
+    """GET /reminders/admin/config shows config page for admins."""
+    _create_user(app, "admin_cfg1", role="administrator")
+    _login(client, "admin_cfg1")
+    resp = client.get("/reminders/admin/config")
+    assert resp.status_code == 200
+    assert b"Reassessment" in resp.data
+    assert b"90" in resp.data
+
+
+def test_admin_config_requires_admin(client, app, db):
+    """Non-admin cannot access config page."""
+    _create_user(app, "pat_cfg1")
+    _login(client, "pat_cfg1")
+    resp = client.get("/reminders/admin/config")
+    assert resp.status_code == 403
+
+
+def test_admin_update_config(client, app, db):
+    """POST /reminders/admin/config/<template_id> updates config."""
+    _create_user(app, "admin_cfg2", role="administrator")
+    _login(client, "admin_cfg2")
+    resp = client.post(
+        "/reminders/admin/config/0",
+        data={"interval_days": "60"},
+        follow_redirects=True,
+    )
+    assert resp.status_code == 200
+    assert b"updated" in resp.data.lower()

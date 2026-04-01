@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+{% block title %}Reminder Configuration - MeridianCare{% endblock %}
+
+{% block content %}
+<h1>Reminder Configuration</h1>
+
+<h2>Reassessment Intervals</h2>
+<p>Configure how often patients are reminded to complete reassessments.</p>
+
+<table class="table">
+    <thead>
+        <tr><th>Template</th><th>Interval (days)</th><th>Actions</th></tr>
+    </thead>
+    <tbody>
+        <tr>
+            <td>Default (All Templates)</td>
+            <td>{{ config.reassessment_interval_days }} days</td>
+            <td>
+                <form method="POST" action="{{ url_for('reminders.update_config', template_id=0) }}" style="display:inline;">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <input type="number" name="interval_days" value="{{ config.reassessment_interval_days }}" min="1" max="365" style="width:80px;">
+                    <button type="submit" class="btn btn-sm btn-primary">Update</button>
+                </form>
+            </td>
+        </tr>
+    </tbody>
+</table>
+
+<a href="{{ url_for('reminders.admin_reminders') }}" class="btn btn-secondary">Back to All Reminders</a>
+{% endblock %}

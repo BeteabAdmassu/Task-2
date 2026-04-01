@@ -4,6 +4,57 @@
 {% block content %}
 <h1>System Observability</h1>
 
+<h2>Anomaly Alerts</h2>
+{% if alerts %}
+<table class="table">
+    <thead>
+        <tr><th>Type</th><th>Severity</th><th>Message</th><th>Created</th><th>Status</th><th>Action</th></tr>
+    </thead>
+    <tbody>
+        {% for alert in alerts %}
+        <tr>
+            <td>{{ alert.alert_type }}</td>
+            <td>{{ alert.severity }}</td>
+            <td>{{ alert.message }}</td>
+            <td>{{ alert.created_at }}</td>
+            <td>{% if alert.acknowledged_at %}Acknowledged{% else %}Open{% endif %}</td>
+            <td>
+                {% if not alert.acknowledged_at %}
+                <form method="POST" action="{{ url_for('observability.acknowledge_alert', alert_id=alert.id) }}">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <button type="submit" class="btn btn-sm btn-warning">Acknowledge</button>
+                </form>
+                {% endif %}
+            </td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% else %}
+<p>No recent alerts.</p>
+{% endif %}
+
+<h2>Slow Queries</h2>
+{% if slow_queries %}
+<table class="table">
+    <thead>
+        <tr><th>Endpoint</th><th>Duration (ms)</th><th>Correlation ID</th><th>Timestamp</th></tr>
+    </thead>
+    <tbody>
+        {% for sq in slow_queries %}
+        <tr>
+            <td>{{ sq.endpoint }}</td>
+            <td>{{ "%.1f"|format(sq.duration_ms) }}</td>
+            <td>{{ sq.correlation_id or "" }}</td>
+            <td>{{ sq.timestamp }}</td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% else %}
+<p>No slow queries recorded.</p>
+{% endif %}
+
 <h2>Database Statistics</h2>
 <table class="table">
     <thead>

@@ -12,11 +12,24 @@
     <tbody>
         {% for r in reminders %}
         <tr>
-            <td>{{ r.type | title }}</td>
+            <td>
+                {% if r.type == 'appointment' %}
+                <span class="badge badge-primary">Appointment</span>
+                {% elif r.type == 'reassessment' %}
+                <span class="badge badge-warning">Reassessment</span>
+                {% else %}
+                <span class="badge badge-secondary">{{ r.type | title }}</span>
+                {% endif %}
+            </td>
             <td>{{ r.message }}</td>
             <td>{{ r.due_date.strftime('%Y-%m-%d') if r.due_date else '' }}</td>
             <td>
-                <form method="POST" action="{{ url_for('reminders.dismiss', reminder_id=r.id) }}">
+                {% if r.type == 'reassessment' %}
+                <a href="{{ url_for('assessments.start') }}" class="btn btn-sm btn-primary">Start Assessment</a>
+                {% elif r.type == 'appointment' and r.related_entity_id %}
+                <a href="{{ url_for('schedule.my_appointments') }}" class="btn btn-sm btn-primary">View Appointment</a>
+                {% endif %}
+                <form method="POST" action="{{ url_for('reminders.dismiss', reminder_id=r.id) }}" style="display:inline;">
                     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                     <button type="submit" class="btn btn-sm btn-secondary">Dismiss</button>
                 </form>
