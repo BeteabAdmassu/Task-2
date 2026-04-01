@@ -8,6 +8,7 @@ from app.extensions import db
 from app.models.user import User, LoginAttempt
 from app.utils.audit import log_action
 from app.utils.antireplay import antireplay
+from app.utils.reminders import generate_pending_reminders
 
 auth_bp = Blueprint("auth", __name__, url_prefix="/auth")
 
@@ -187,6 +188,10 @@ def login():
             _record_attempt(username, ip, ua, success=True)
             log_action("login_success", "user", user.id, {"username": username, "ip": ip})
             login_user(user)
+            try:
+                generate_pending_reminders(user_id=user.id)
+            except Exception:
+                pass  # never block login on reminder generation errors
             next_page = request.args.get("next")
             destination = next_page if _is_safe_redirect_url(next_page) else url_for(_get_dashboard_for_role(user.role))
             if request.headers.get("HX-Request"):

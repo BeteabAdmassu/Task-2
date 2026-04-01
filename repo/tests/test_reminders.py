@@ -347,3 +347,235 @@ def test_admin_update_config(client, app, db):
     )
     assert resp.status_code == 200
     assert b"updated" in resp.data.lower()
+
+
+# ---------------------------------------------------------------------------
+# Scheduler-driven generation (no route visit required)
+# ---------------------------------------------------------------------------
+
+def test_scheduler_job_generates_reminders_without_page_visit(app, db):
+    """generate_pending_reminders() works directly — no HTTP request needed.
+
+    This mirrors what the background scheduler job does every 15 minutes.
+    """
+    from app.models.assessment import AssessmentTemplate, AssessmentResult
+    from app.utils.reminders import generate_pending_reminders
+
+    uid = _create_user(app, "pat_sched1")
+    with app.app_context():
+        tmpl = AssessmentTemplate(
+            name="SchedTest", version=1,
+            questions_json="[]", scoring_rules_json="{}",
+        )
+        db.session.add(tmpl)
+        db.session.flush()
+
+        old_date = datetime.now(timezone.utc) - timedelta(days=100)
+        result = AssessmentResult(
+            patient_id=uid, template_id=tmpl.id, template_version=1,
+            answers_json="{}", scores_json="{}", risk_level="Low",
+            explanation_snapshot_json="{}", submitted_at=old_date,
+        )
+        db.session.add(result)
+        db.session.commit()
+
+        # Call the generation function directly — as the scheduler job does.
+        # No client.get('/reminders') is called.
+        generate_pending_reminders()
+
+        reminder = Reminder.query.filter_by(
+            patient_id=uid, type="reassessment", status="pending"
+        ).first()
+        assert reminder is not None
+
+
+def test_scheduler_uses_app_context(app, db):
+    """The scheduler job function runs generate_pending_reminders inside an app context."""
+    from app.utils.reminders import generate_pending_reminders
+
+    # Verify the function can be called within app.app_context() without error,
+    # which is exactly what the scheduler's _job() wrapper does.
+    with app.app_context():
+        generate_pending_reminders()  # should not raise
+
+
+# ---------------------------------------------------------------------------
+# Login-triggered reminder refresh
+# ---------------------------------------------------------------------------
+
+def test_login_generates_reminder_for_user(client, app, db):
+    """A successful login triggers reminder generation for that user."""
+    from app.models.assessment import AssessmentTemplate, AssessmentResult
+
+    uid = _create_user(app, "pat_login_rem1")
+    with app.app_context():
+        tmpl = AssessmentTemplate(
+            name="LoginTest", version=1,
+            questions_json="[]", scoring_rules_json="{}",
+        )
+        db.session.add(tmpl)
+        db.session.flush()
+
+        old_date = datetime.now(timezone.utc) - timedelta(days=100)
+        result = AssessmentResult(
+            patient_id=uid, template_id=tmpl.id, template_version=1,
+            answers_json="{}", scores_json="{}", risk_level="Low",
+            explanation_snapshot_json="{}", submitted_at=old_date,
+        )
+        db.session.add(result)
+        db.session.commit()
+
+    # Login — reminder generation should happen as a side-effect.
+    # We do NOT visit /reminders.
+    _login(client, "pat_login_rem1")
+
+    with app.app_context():
+        reminder = Reminder.query.filter_by(
+            patient_id=uid, type="reassessment", status="pending"
+        ).first()
+        assert reminder is not None
+
+
+def test_login_reminder_refresh_does_not_affect_other_users(client, app, db):
+    """Login-time refresh only touches the logging-in user's reminders."""
+    from app.models.assessment import AssessmentTemplate, AssessmentResult
+
+    uid_a = _create_user(app, "pat_login_a")
+    uid_b = _create_user(app, "pat_login_b")
+
+    with app.app_context():
+        tmpl = AssessmentTemplate(
+            name="LoginTest2", version=1,
+            questions_json="[]", scoring_rules_json="{}",
+        )
+        db.session.add(tmpl)
+        db.session.flush()
+
+        old_date = datetime.now(timezone.utc) - timedelta(days=100)
+        for uid in (uid_a, uid_b):
+            result = AssessmentResult(
+                patient_id=uid, template_id=tmpl.id, template_version=1,
+                answers_json="{}", scores_json="{}", risk_level="Low",
+                explanation_snapshot_json="{}", submitted_at=old_date,
+            )
+            db.session.add(result)
+        db.session.commit()
+
+    # Only pat_login_a logs in.
+    _login(client, "pat_login_a")
+
+    with app.app_context():
+        count_a = Reminder.query.filter_by(patient_id=uid_a, type="reassessment").count()
+        count_b = Reminder.query.filter_by(patient_id=uid_b, type="reassessment").count()
+        assert count_a == 1
+        assert count_b == 0  # pat_login_b did not log in — no reminder yet
+
+
+# ---------------------------------------------------------------------------
+# Admin config persists and affects reminder generation
+# ---------------------------------------------------------------------------
+
+def test_admin_config_persists_to_db(client, app, db):
+    """POSTing a new interval saves a ReminderConfig row to the database."""
+    from app.models.reminder import ReminderConfig
+
+    _create_user(app, "admin_cfg_db", role="administrator")
+    _login(client, "admin_cfg_db")
+    resp = client.post(
+        "/reminders/admin/config/0",
+        data={"interval_days": "45"},
+        follow_redirects=True,
+    )
+    assert resp.status_code == 200
+
+    with app.app_context():
+        cfg = ReminderConfig.query.filter_by(template_id="reassessment").first()
+        assert cfg is not None
+        assert cfg.interval_days == 45
+
+
+def test_admin_config_page_reflects_persisted_value(client, app, db):
+    """After saving a custom interval, the config page shows the persisted value."""
+    from app.models.reminder import ReminderConfig
+
+    _create_user(app, "admin_cfg_page", role="administrator")
+    _login(client, "admin_cfg_page")
+
+    with app.app_context():
+        cfg = ReminderConfig(template_id="reassessment", interval_days=30)
+        db.session.add(cfg)
+        db.session.commit()
+
+    resp = client.get("/reminders/admin/config")
+    assert resp.status_code == 200
+    assert b"30" in resp.data
+
+
+def test_shorter_interval_triggers_reassessment_reminder(app, db):
+    """Setting a shorter interval causes reminders for patients just past that threshold."""
+    from app.models.assessment import AssessmentTemplate, AssessmentResult
+    from app.models.reminder import ReminderConfig
+    from app.utils.reminders import generate_pending_reminders
+
+    uid = _create_user(app, "pat_interval1")
+    with app.app_context():
+        # Persist interval of 60 days.
+        cfg = ReminderConfig(template_id="reassessment", interval_days=60)
+        db.session.add(cfg)
+
+        tmpl = AssessmentTemplate(
+            name="IntervalTest", version=1,
+            questions_json="[]", scoring_rules_json="{}",
+        )
+        db.session.add(tmpl)
+        db.session.flush()
+
+        # Assessment is 75 days old — over 60-day threshold, under default 90.
+        submitted = datetime.now(timezone.utc) - timedelta(days=75)
+        result = AssessmentResult(
+            patient_id=uid, template_id=tmpl.id, template_version=1,
+            answers_json="{}", scores_json="{}", risk_level="Low",
+            explanation_snapshot_json="{}", submitted_at=submitted,
+        )
+        db.session.add(result)
+        db.session.commit()
+
+        generate_pending_reminders()
+
+        reminder = Reminder.query.filter_by(
+            patient_id=uid, type="reassessment", status="pending"
+        ).first()
+        assert reminder is not None
+        assert "60 days" in reminder.message
+
+
+def test_default_interval_does_not_trigger_for_recent_assessment(app, db):
+    """With default 90-day interval, a 75-day-old assessment produces no reminder."""
+    from app.models.assessment import AssessmentTemplate, AssessmentResult
+    from app.utils.reminders import generate_pending_reminders
+
+    uid = _create_user(app, "pat_interval2")
+    with app.app_context():
+        # No ReminderConfig row — defaults to 90 days.
+        tmpl = AssessmentTemplate(
+            name="IntervalTest2", version=1,
+            questions_json="[]", scoring_rules_json="{}",
+        )
+        db.session.add(tmpl)
+        db.session.flush()
+
+        submitted = datetime.now(timezone.utc) - timedelta(days=75)
+        result = AssessmentResult(
+            patient_id=uid, template_id=tmpl.id, template_version=1,
+            answers_json="{}", scores_json="{}", risk_level="Low",
+            explanation_snapshot_json="{}", submitted_at=submitted,
+        )
+        db.session.add(result)
+        db.session.commit()
+
+        generate_pending_reminders()
+
+        reminder = Reminder.query.filter_by(
+            patient_id=uid, type="reassessment", status="pending"
+        ).first()
+        assert reminder is None  # 75 days < 90-day default threshold

@@ -6,5 +6,5 @@ from app.models.scheduling import Clinician, ScheduleTemplate, Room, Slot, Reser
 from app.models.visit import Visit, VisitTransition
 from app.models.coverage import CoverageZone, ZoneAssignment, ZoneDeliveryWindow
 from app.models.audit import AuditLog, AnomalyAlert, SlowQuery, SignedRequest
-from app.models.reminder import Reminder
+from app.models.reminder import Reminder, ReminderConfig
 from app.models.idempotency import RequestToken

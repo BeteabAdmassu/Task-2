@@ -8,33 +8,39 @@ from app.models.assessment import AssessmentResult
 from app.models.user import User
 
 
-def generate_pending_reminders():
+def generate_pending_reminders(user_id=None):
     """Generate reminders for upcoming appointments and overdue reassessments.
 
     - Confirmed reservations with slot date ~24h from now that lack an appointment reminder.
-    - Patients whose last assessment was >90 days ago that lack a reassessment reminder.
+    - Patients whose last assessment was >configured interval days ago that lack a
+      reassessment reminder.
     - Auto-expire reminders for canceled reservations.
+
+    Pass *user_id* to restrict all operations to a single patient (used on login
+    for a lightweight per-user refresh).
     """
-    _generate_appointment_reminders()
-    _generate_reassessment_reminders()
-    _expire_canceled_reservation_reminders()
+    _generate_appointment_reminders(user_id=user_id)
+    _generate_reassessment_reminders(user_id=user_id)
+    _expire_canceled_reservation_reminders(user_id=user_id)
 
 
-def _generate_appointment_reminders():
+def _generate_appointment_reminders(user_id=None):
     """Create appointment reminders for confirmed reservations with slot date within 24 hours."""
     now = datetime.now(timezone.utc)
     tomorrow = (now + timedelta(hours=24)).date()
 
     # Find confirmed reservations whose slot date is tomorrow (within 24h)
-    confirmed = (
+    query = (
         db.session.query(Reservation)
         .join(Slot, Reservation.slot_id == Slot.id)
         .filter(
             Reservation.status == "confirmed",
             Slot.date == tomorrow,
         )
-        .all()
     )
+    if user_id is not None:
+        query = query.filter(Reservation.patient_id == user_id)
+    confirmed = query.all()
 
     for res in confirmed:
         # Dedup by patient_id + related_entity_type + related_entity_id
@@ -66,13 +72,19 @@ def _generate_appointment_reminders():
     db.session.commit()
 
 
-def _generate_reassessment_reminders():
-    """Create reassessment reminders for patients whose last assessment was >90 days ago."""
-    cutoff = datetime.now(timezone.utc) - timedelta(days=90)
+def _generate_reassessment_reminders(user_id=None):
+    """Create reassessment reminders for patients whose last assessment is overdue."""
+    from app.models.reminder import ReminderConfig
+
+    interval_days = ReminderConfig.get_interval("reassessment", default=90)
+    cutoff = datetime.now(timezone.utc) - timedelta(days=interval_days)
     today = date.today()
 
-    # Find all patients (active users with role=patient)
-    patients = User.query.filter_by(role="patient", is_active=True).all()
+    # Find all (or one) active patient(s)
+    query = User.query.filter_by(role="patient", is_active=True)
+    if user_id is not None:
+        query = query.filter_by(id=user_id)
+    patients = query.all()
 
     for patient in patients:
         # Find the most recent assessment
@@ -107,7 +119,10 @@ def _generate_reassessment_reminders():
                     reminder = Reminder(
                         patient_id=patient.id,
                         type="reassessment",
-                        message="It has been over 90 days since your last assessment. Please schedule a reassessment.",
+                        message=(
+                            f"It has been over {interval_days} days since your last "
+                            "assessment. Please schedule a reassessment."
+                        ),
                         due_date=today,
                         status="pending",
                         related_entity_type="assessment",
@@ -118,9 +133,12 @@ def _generate_reassessment_reminders():
     db.session.commit()
 
 
-def _expire_canceled_reservation_reminders():
+def _expire_canceled_reservation_reminders(user_id=None):
     """Auto-expire reminders whose related reservation has been canceled."""
-    canceled_reservations = Reservation.query.filter_by(status="canceled").all()
+    query = Reservation.query.filter_by(status="canceled")
+    if user_id is not None:
+        query = query.filter_by(patient_id=user_id)
+    canceled_reservations = query.all()
     for res in canceled_reservations:
         pending_reminders = Reminder.query.filter_by(
             related_entity_type="reservation",

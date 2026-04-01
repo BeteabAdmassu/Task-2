@@ -1,3 +1,4 @@
+import atexit
 import os
 import uuid
 from flask import Flask
@@ -5,6 +6,40 @@ from app.config import config_by_name
 from app.extensions import db, csrf, migrate, login_manager
 from app.utils.logging import setup_logging
 from app.utils.middleware import register_middleware
+
+
+def _start_reminder_scheduler(app):
+    """Start a background thread that runs reminder generation every 15 minutes.
+
+    Guards:
+    - Skipped entirely in testing mode.
+    - In debug mode with the Werkzeug reloader, only the worker subprocess starts
+      the scheduler (avoids double-scheduling in the monitor/reloader process).
+    - Registered with atexit for graceful shutdown.
+    """
+    try:
+        from apscheduler.schedulers.background import BackgroundScheduler
+    except ImportError:
+        app.logger.warning(
+            "APScheduler is not installed — background reminder generation disabled. "
+            "Run: pip install APScheduler>=3.10,<4.0"
+        )
+        return None
+    from app.utils.reminders import generate_pending_reminders
+
+    scheduler = BackgroundScheduler(daemon=True)
+
+    def _job():
+        with app.app_context():
+            try:
+                generate_pending_reminders()
+            except Exception:
+                pass  # never let a DB error crash the scheduler thread
+
+    scheduler.add_job(_job, "interval", minutes=15, id="reminder_generation")
+    scheduler.start()
+    atexit.register(lambda: scheduler.shutdown(wait=False))
+    return scheduler
 
 
 def create_app(config_name=None):
@@ -122,5 +157,12 @@ def create_app(config_name=None):
     with app.app_context():
         from app import models  # noqa: F401
         db.create_all()
+
+    # Start in-process reminder scheduler (skipped in testing and in the
+    # Werkzeug reloader monitor process to avoid duplicate jobs).
+    if not app.testing:
+        from werkzeug.serving import is_running_from_reloader
+        if not app.debug or is_running_from_reloader():
+            _start_reminder_scheduler(app)
 
     return app
