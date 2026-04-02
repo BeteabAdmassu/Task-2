@@ -17,3 +17,15 @@ services:
       timeout: 5s
       retries: 5
       start_period: 10s
+
+  test-runner:
+    build:
+      context: .
+      dockerfile: Dockerfile.test
+    environment:
+      - FLASK_ENV=testing
+    tmpfs:
+      - /app/data
+    network_mode: host
+    profiles:
+      - test
