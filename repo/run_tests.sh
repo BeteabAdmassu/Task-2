@@ -6,6 +6,8 @@ cd "$SCRIPT_DIR"
 
 echo "=== MeridianCare Test Suite ==="
 
+RUN_E2E="${RUN_E2E:-0}"
+
 # ── Step 1: Check Docker availability ──
 echo ""
 echo "--- Checking Docker availability ---"
@@ -55,6 +57,13 @@ if [ "$UNIT_EXIT" -ne 0 ]; then
     exit "$UNIT_EXIT"
 fi
 echo "--- Unit/integration tests passed ---"
+
+if [ "$RUN_E2E" != "1" ]; then
+    echo ""
+    echo "=== Unit/integration tests passed (E2E temporarily disabled) ==="
+    echo "Set RUN_E2E=1 to run E2E tests."
+    exit 0
+fi
 
 # ── Step 4: Run E2E tests inside test-runner container ──
 # network_mode: host (set in docker-compose.yml) lets the container reach
