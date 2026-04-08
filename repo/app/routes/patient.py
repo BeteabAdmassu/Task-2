@@ -2,6 +2,7 @@ import re
 from datetime import datetime, date
 from flask import Blueprint, render_template, request, redirect, url_for, flash, jsonify, make_response
 from flask_login import login_required, current_user, logout_user
+from markupsafe import escape
 from app.extensions import db
 from app.models.demographics import PatientDemographics, DemographicsChangeLog
 from app.models.assessment import AssessmentResult, AssessmentDraft
@@ -20,6 +21,7 @@ patient_bp = Blueprint("patient", __name__, url_prefix="/patient")
 
 PHONE_RE = re.compile(r"^[\d\s\-\(\)\+]{7,20}$")
 ZIP_RE = re.compile(r"^\d{5}(-\d{4})?$")
+ID_RE = re.compile(r"^[A-Za-z0-9\s\-\/]{1,50}$")
 
 SENSITIVE_FIELDS = ("insurance_id_encrypted", "government_id_encrypted")
 PLAIN_FIELDS = (
@@ -71,8 +73,15 @@ def _parse_demographics_form(form):
     data["emergency_contact_phone"] = form.get("emergency_contact_phone", "").strip() or None
     data["emergency_contact_relationship"] = form.get("emergency_contact_relationship", "").strip() or None
 
-    data["insurance_id"] = form.get("insurance_id", "").strip() or None
-    data["government_id"] = form.get("government_id", "").strip() or None
+    insurance_id = form.get("insurance_id", "").strip() or None
+    if insurance_id and not ID_RE.match(insurance_id):
+        errors.append("Insurance ID may only contain letters, digits, spaces, hyphens, and forward slashes (max 50 characters).")
+    data["insurance_id"] = insurance_id
+
+    government_id = form.get("government_id", "").strip() or None
+    if government_id and not ID_RE.match(government_id):
+        errors.append("Government ID may only contain letters, digits, spaces, hyphens, and forward slashes (max 50 characters).")
+    data["government_id"] = government_id
 
     return data, errors
 
@@ -189,9 +198,9 @@ def reveal_field():
 
     field = request.form.get("field", "")
     if field == "insurance_id" and demo.insurance_id_encrypted:
-        return decrypt_value(demo.insurance_id_encrypted)
+        return str(escape(decrypt_value(demo.insurance_id_encrypted)))
     elif field == "government_id" and demo.government_id_encrypted:
-        return decrypt_value(demo.government_id_encrypted)
+        return str(escape(decrypt_value(demo.government_id_encrypted)))
     return "", 404
 
 

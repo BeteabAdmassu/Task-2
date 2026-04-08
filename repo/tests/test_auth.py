@@ -253,3 +253,23 @@ def test_login_attempt_recording(client, app):
         attempts = LoginAttempt.query.filter_by(username="nobody").all()
         assert len(attempts) == 1
         assert attempts[0].success is False
+
+
+def test_login_form_has_antireplay_fields(client, app):
+    """Login form HTML must include the three anti-replay hidden inputs."""
+    with app.app_context():
+        resp = client.get("/auth/login")
+        assert resp.status_code == 200
+        assert b'name="_nonce"' in resp.data
+        assert b'name="_timestamp"' in resp.data
+        assert b'name="_signature"' in resp.data
+
+
+def test_unsigned_login_post_rejected(client, app):
+    """A POST to /auth/login without anti-replay fields must be rejected (400)."""
+    with app.app_context():
+        resp = client.post(
+            "/auth/login",
+            data={"username": "anyuser", "password": "Password1"},
+        )
+        assert resp.status_code == 400

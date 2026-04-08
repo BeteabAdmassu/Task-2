@@ -27,6 +27,7 @@
 
 <form hx-post="{{ url_for('auth.login') }}" hx-target="#login-form-container" hx-swap="innerHTML">
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    {{ antireplay_inputs("POST", url_for('auth.login')) }}
 
     <div class="form-group">
         <label for="username">Username</label>

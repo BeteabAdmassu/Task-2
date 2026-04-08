@@ -10,19 +10,8 @@
 
         {% if remaining_seconds > 0 %}
         <div class="alert alert-warning" id="hold-timer">
-            Hold expires in <span id="countdown">{{ remaining_seconds }}</span> seconds
+            Hold expires in <span id="countdown" data-seconds="{{ remaining_seconds }}">{{ remaining_seconds }}</span> seconds
         </div>
-        <script>
-        (function(){
-            var r={{ remaining_seconds }};
-            var el=document.getElementById('countdown');
-            setInterval(function(){
-                r--;
-                if(r<=0){el.textContent='0';document.getElementById('hold-timer').innerHTML='Hold expired. Please try again.';}
-                else{var m=Math.floor(r/60),s=r%60;el.textContent=(m>0?m+'m ':'')+s+'s';}
-            },1000);
-        })();
-        </script>
         {% endif %}
 
         {% set _confirm_action = url_for('schedule.confirm', reservation_id=reservation.id) %}
@@ -39,4 +28,21 @@
         </form>
     </div>
 </div>
+{% endblock %}
+
+{% block extra_scripts %}
+{% if remaining_seconds > 0 %}
+<script>
+(function(){
+    var el=document.getElementById('countdown');
+    if(!el) return;
+    var r=parseInt(el.dataset.seconds,10);
+    setInterval(function(){
+        r--;
+        if(r<=0){el.textContent='0';document.getElementById('hold-timer').innerHTML='Hold expired. Please try again.';}
+        else{var m=Math.floor(r/60),s=r%60;el.textContent=(m>0?m+'m ':'')+s+'s';}
+    },1000);
+})();
+</script>
+{% endif %}
 {% endblock %}

@@ -89,3 +89,26 @@ def test_health_detailed_requires_admin_role(client, app, db):
     _login(client, "patient_hd1")
     resp = client.get("/health/detailed")
     assert resp.status_code in (302, 403)
+
+
+def test_operations_sessions_accessible_by_admin(client, app, db):
+    _create_user(app, "admin_sess1", role="administrator")
+    _login(client, "admin_sess1")
+    resp = client.get("/admin/operations/sessions")
+    assert resp.status_code == 200
+
+
+def test_operations_sessions_requires_admin(client, app, db):
+    _create_user(app, "pat_sess1")
+    _login(client, "pat_sess1")
+    resp = client.get("/admin/operations/sessions")
+    assert resp.status_code == 403
+
+
+def test_operations_sessions_shows_active_users(client, app, db):
+    _create_user(app, "admin_sess2", role="administrator")
+    _create_user(app, "active_patient_sess")
+    _login(client, "admin_sess2")
+    resp = client.get("/admin/operations/sessions")
+    assert resp.status_code == 200
+    assert b"active_patient_sess" in resp.data

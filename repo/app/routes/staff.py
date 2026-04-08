@@ -1,5 +1,6 @@
 from flask import Blueprint, render_template, request, redirect, url_for, flash, jsonify
 from flask_login import current_user, login_required
+from markupsafe import escape
 from app.extensions import db
 from app.models.user import User
 from app.models.demographics import PatientDemographics, DemographicsChangeLog
@@ -85,7 +86,7 @@ def reveal_field(patient_id):
 
     field = request.form.get("field", "")
     if field == "insurance_id" and demo.insurance_id_encrypted:
-        return decrypt_value(demo.insurance_id_encrypted)
+        return str(escape(decrypt_value(demo.insurance_id_encrypted)))
     elif field == "government_id" and demo.government_id_encrypted:
-        return decrypt_value(demo.government_id_encrypted)
+        return str(escape(decrypt_value(demo.government_id_encrypted)))
     return "", 404

@@ -14,6 +14,7 @@ class User(UserMixin, db.Model):
         db.String(20), nullable=False, default="patient"
     )  # administrator, clinician, front_desk, patient
     is_active = db.Column(db.Boolean, nullable=False, default=True)
+    last_login_at = db.Column(db.DateTime, nullable=True)
     created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
     updated_at = db.Column(
         db.DateTime,

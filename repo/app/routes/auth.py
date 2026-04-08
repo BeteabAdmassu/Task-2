@@ -186,6 +186,7 @@ def login():
 
         user = User.query.filter_by(username=username).first()
         if user and user.is_active and user.check_password(password):
+            user.last_login_at = datetime.now(timezone.utc)
             _record_attempt(username, ip, ua, success=True)
             log_action("login_success", "user", user.id, {"username": username, "ip": ip})
             try:

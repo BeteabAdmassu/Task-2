@@ -18,7 +18,7 @@ All endpoints are REST-style, consumed by HTMX partial updates. Responses return
 | Method | Path | Description | Auth | Request | Response |
 |--------|------|-------------|------|---------|----------|
 | GET | `/auth/register` | Registration page | None | — | HTML form |
-| POST | `/auth/register` | Create account | None | `username`, `password`, `confirm_password` | Redirect to login (success) or HTML partial with errors |
+| POST | `/auth/register` | Create account | None | `username`, `password`, `password_confirm` | Redirect to login (success) or HTML partial with errors |
 | GET | `/auth/login` | Login page | None | — | HTML form |
 | POST | `/auth/login` | Authenticate | None | `username`, `password`, signed timestamp + nonce + signature (anti-replay) | Session cookie + redirect to role dashboard |
 | POST | `/auth/logout` | End session | Authenticated | CSRF token | Redirect to login |
@@ -63,16 +63,17 @@ All endpoints are REST-style, consumed by HTMX partial updates. Responses return
 
 ---
 
-## Health Assessments (`/assessments`, `/staff/assessments`)
+## Health Assessments (`/assessments`)
 
 | Method | Path | Description | Auth | Request | Response |
 |--------|------|-------------|------|---------|----------|
-| GET | `/assessments/start/<visit_id>` | Begin assessment wizard | Patient | — | HTML wizard (step 1: PHQ-9) |
-| POST | `/assessments/save-draft` | Save partial progress | Patient | `visit_id`, `template_id`, `partial_answers` (JSON) | HTML partial (confirmation) |
-| POST | `/assessments/submit/<visit_id>` | Finalize assessment | Patient | `answers` (JSON), `_request_token` | Redirect to result page |
-| GET | `/assessments/result/<assessment_id>` | View result with explanation | Patient, Clinician | — | HTML page (scores, risk level, rules) |
-| GET | `/assessments/history` | Patient's assessment history | Patient | `?page=` | HTML timeline/list |
-| GET | `/staff/assessments/<patient_id>` | Clinician view of patient assessments | Clinician, Front Desk | — | HTML list of assessments |
+| GET | `/assessments/start` | Begin assessment wizard (no linked visit) | Patient | — | HTML wizard (step 1: PHQ-9) |
+| GET | `/assessments/start/<visit_id>` | Begin assessment wizard linked to a visit | Patient | — | HTML wizard (step 1: PHQ-9) |
+| POST | `/assessments/step/<step>` | Submit a wizard step and advance | Patient | `visit_id` (optional), `request_token`, answer fields by question key | HTML partial (next step or review) |
+| POST | `/assessments/save-draft` | Save partial progress without advancing | Patient | `visit_id` (optional), answer fields by question key | HTML partial (confirmation) |
+| POST | `/assessments/submit` | Finalize assessment | Patient | `visit_id` (optional), `request_token`, anti-replay fields | Redirect to result page |
+| GET | `/assessments/result/<assessment_id>` | View result with explanation | Patient, Clinician, Admin | — | HTML page (scores, risk level, rules) |
+| GET | `/assessments/history` | Patient's assessment history | Patient | — | HTML timeline/list |
 
 ### Assessment Templates
 - **PHQ-9**: 9 questions, 0-3 scale, total 0-27 → Minimal/Mild/Moderate/Moderately Severe/Severe
@@ -161,16 +162,16 @@ Any active → Canceled (admin override, reason required)
 
 ---
 
-## Reminders (`/patient/reminders`, `/staff/reminders`, `/admin/reminders`)
+## Reminders (`/reminders`)
 
 | Method | Path | Description | Auth | Request | Response |
 |--------|------|-------------|------|---------|----------|
-| GET | `/patient/reminders` | List active reminders | Patient | — | HTML partial (reminder list) |
-| POST | `/patient/reminders/<id>/dismiss` | Dismiss a reminder | Patient | — | HTML partial (updated list) |
-| GET | `/patient/reminders/count` | Badge count for nav | Patient | — | HTML partial (count badge) |
-| GET | `/staff/reminders` | All pending patient reminders | Front Desk, Clinician | — | HTML table |
-| GET | `/admin/reminders/config` | Reassessment interval config | Admin | — | HTML form |
-| PUT | `/admin/reminders/config/<template_id>` | Update interval | Admin | `interval_days` | HTML partial (confirmation) |
+| GET | `/reminders` | List active reminders | Patient | — | HTML reminder list |
+| POST | `/reminders/<id>/dismiss` | Dismiss a reminder | Patient | anti-replay fields | Redirect to reminder list |
+| GET | `/reminders/patient/count` | Badge count for nav | Patient | — | HTML partial (count badge) |
+| GET | `/reminders/admin` | All pending patient reminders | Admin | — | HTML table |
+| GET | `/reminders/admin/config` | Reassessment interval config | Admin | — | HTML form |
+| POST | `/reminders/admin/config/<template_id>` | Update interval | Admin | `interval_days`, anti-replay fields | Redirect to config page |
 
 ### Defaults
 - Chronic-care reassessment: every 90 days

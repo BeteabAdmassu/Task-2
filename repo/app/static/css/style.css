@@ -463,3 +463,8 @@ tr:hover {
         justify-content: center;
     }
 }
+
+/* Assessment result — risk badge variants */
+.risk-low { background: var(--success-light); color: var(--success); }
+.risk-moderate { background: var(--warning-light); color: var(--warning); }
+.risk-high { background: var(--danger-light); color: var(--danger); }
