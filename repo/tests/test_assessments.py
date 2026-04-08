@@ -8,7 +8,7 @@ from app.models.visit import Visit
 from app.models.scheduling import Clinician
 from app.extensions import db
 from app.utils.scoring import calculate_scores, calculate_risk_level
-from tests.signing_helpers import signed_data
+from tests.signing_helpers import signed_data, login_data
 
 _SUBMIT_PATH = "/assessments/submit"
 
@@ -25,7 +25,7 @@ def _create_user(app, username, role="patient", password="Password1"):
 def _login(client, username, password="Password1"):
     return client.post(
         "/auth/login",
-        data={"username": username, "password": password},
+        data=login_data(username, password),
         follow_redirects=True,
     )
 

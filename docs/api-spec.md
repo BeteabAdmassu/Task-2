@@ -20,7 +20,7 @@ All endpoints are REST-style, consumed by HTMX partial updates. Responses return
 | GET | `/auth/register` | Registration page | None | — | HTML form |
 | POST | `/auth/register` | Create account | None | `username`, `password`, `confirm_password` | Redirect to login (success) or HTML partial with errors |
 | GET | `/auth/login` | Login page | None | — | HTML form |
-| POST | `/auth/login` | Authenticate | None | `username`, `password`, signed timestamp header | Session cookie + redirect to role dashboard |
+| POST | `/auth/login` | Authenticate | None | `username`, `password`, signed timestamp + nonce + signature (anti-replay) | Session cookie + redirect to role dashboard |
 | POST | `/auth/logout` | End session | Authenticated | CSRF token | Redirect to login |
 | GET | `/auth/check-username` | HTMX username availability | None | `?username=<value>` | HTML partial: "Available" / "Taken" |
 
@@ -79,7 +79,7 @@ All endpoints are REST-style, consumed by HTMX partial updates. Responses return
 - **GAD-7**: 7 questions, 0-3 scale, total 0-21 → Minimal/Mild/Moderate/Severe
 - **Blood Pressure**: Self-reported category (Normal/Elevated/Stage 1/Stage 2/Crisis)
 - **Fall Risk**: Yes/No flags (history of falls, mobility aids, dizziness, balance medications)
-- **Medication Adherence**: 4-question scale (never/rarely/sometimes/often miss)
+- **Medication Adherence**: 4 questions, 0-3 scale (total 0-12) → never_miss (≤2) / rarely_miss (3-5) / sometimes_miss (6-8) / often_miss (9+)
 
 ### Risk Stratification Rules
 - **High**: PHQ-9 ≥ 15 OR GAD-7 ≥ 15 OR BP = Crisis OR fall-risk ≥ 2 flags
@@ -88,19 +88,23 @@ All endpoints are REST-style, consumed by HTMX partial updates. Responses return
 
 ---
 
-## Scheduling (`/schedule`, `/staff/schedule`, `/admin/schedule`)
+## Scheduling (`/schedule`)
 
 | Method | Path | Description | Auth | Request | Response |
 |--------|------|-------------|------|---------|----------|
-| GET | `/schedule/available` | Search available slots | Patient, Front Desk | `?date_from=`, `?date_to=`, `?clinician_id=` | HTML slot list |
-| POST | `/schedule/hold/<slot_id>` | Create 10-min reservation hold | Patient, Front Desk | `_request_token` | HTML partial (countdown timer) |
-| POST | `/schedule/confirm/<reservation_id>` | Confirm booking | Patient, Front Desk | `_request_token` | HTML partial (booking confirmation) |
-| DELETE | `/schedule/cancel/<reservation_id>` | Cancel hold or booking | Patient, Front Desk | `_request_token`, `reason` (optional) | HTML partial (cancellation confirmation) |
-| GET | `/staff/schedule/calendar` | Staff calendar view | Front Desk, Clinician, Admin | `?week=`, `?clinician_id=` | HTML calendar (week view) |
-| POST | `/admin/schedule/bulk-generate` | Bulk slot generation | Admin | `clinician_id`, `date_from`, `date_to`, `template_id` | HTML partial (generated slot count) |
-| GET | `/admin/holidays` | List holidays | Admin | — | HTML list |
-| POST | `/admin/holidays` | Add holiday | Admin | `date`, `name` | HTML partial (updated list) |
-| DELETE | `/admin/holidays/<id>` | Remove holiday | Admin | — | HTML partial (updated list) |
+| GET | `/schedule/available` | Search available slots | Authenticated | `?date_from=`, `?date_to=`, `?clinician_id=` | HTML slot list |
+| POST | `/schedule/hold/<slot_id>` | Create 10-min reservation hold | Patient | `request_token` | Redirect to confirm page |
+| GET | `/schedule/confirm/<reservation_id>` | Confirm page with countdown | Patient | — | HTML confirm page |
+| POST | `/schedule/confirm/<reservation_id>` | Confirm booking | Patient | — | Redirect to my appointments |
+| POST | `/schedule/cancel/<reservation_id>` | Cancel hold or booking | Patient | — | Redirect to my appointments |
+| POST | `/schedule/behalf/<patient_id>/hold/<slot_id>` | Staff hold on behalf | Admin, Front Desk | `request_token` | Redirect to behalf confirm page |
+| GET | `/schedule/behalf/<patient_id>/confirm/<reservation_id>` | Staff confirm page | Admin, Front Desk | — | HTML confirm page |
+| POST | `/schedule/behalf/<patient_id>/confirm/<reservation_id>` | Staff confirm booking | Admin, Front Desk | — | Redirect to staff calendar |
+| GET | `/schedule/my-appointments` | Patient's appointments | Authenticated | — | HTML appointment list |
+| GET | `/schedule/staff/calendar` | Staff calendar view | Admin, Clinician, Front Desk | `?week=`, `?clinician_id=` | HTML calendar (week view) |
+| GET/POST | `/schedule/admin/holidays` | List/add holidays | Admin | `date`, `name` (POST) | HTML list |
+| POST | `/schedule/admin/holidays/<id>/delete` | Remove holiday | Admin | — | Redirect to holidays |
+| GET/POST | `/schedule/admin/bulk-generate` | Bulk slot generation | Admin | `clinician_id`, `date_from`, `date_to`, `room_id` (POST) | HTML form / redirect |
 
 ### Slot Defaults
 - 15-minute duration, 1 patient capacity per clinician slot
@@ -109,14 +113,14 @@ All endpoints are REST-style, consumed by HTMX partial updates. Responses return
 
 ---
 
-## Visits & Dashboard (`/visits`, `/dashboard`)
+## Visits & Dashboard (`/visits`)
 
 | Method | Path | Description | Auth | Request | Response |
 |--------|------|-------------|------|---------|----------|
-| GET | `/dashboard` | Shared visit dashboard (today's visits) | Front Desk, Clinician, Admin | `?clinician_id=`, `?status=` | HTML dashboard table |
-| POST | `/visits/<id>/transition` | Advance visit state | Front Desk, Clinician, Admin | `target_state`, `reason` (optional), `_request_token` | HTML partial (updated row) |
-| GET | `/visits/<id>/timeline` | Milestone timeline for a visit | Front Desk, Clinician, Admin | — | HTML partial (transition history) |
-| GET | `/dashboard/poll` | HTMX polling for dashboard updates | Front Desk, Clinician, Admin | — | HTML partial (updated rows) |
+| GET | `/visits/dashboard` | Shared visit dashboard (today's visits) | Front Desk, Clinician, Admin | — | HTML dashboard table |
+| GET | `/visits/dashboard/poll` | HTMX polling for dashboard updates | Front Desk, Clinician, Admin | — | HTML partial (updated rows) |
+| POST | `/visits/<id>/transition` | Advance visit state | Front Desk, Clinician, Admin | `target_state`, `reason` (optional), `request_token` | HTML partial (updated row) |
+| GET | `/visits/<id>/timeline` | Milestone timeline for a visit | Authenticated (staff or own) | — | HTML partial (transition history) |
 
 ### State Machine Transitions
 ```
@@ -135,15 +139,20 @@ Any active → Canceled (admin override, reason required)
 
 ---
 
-## Service Coverage Zones (`/admin/zones`, `/delivery`)
+## Service Coverage Zones (`/coverage`)
 
 | Method | Path | Description | Auth | Request | Response |
 |--------|------|-------------|------|---------|----------|
-| GET | `/admin/zones` | List all coverage zones | Admin | — | HTML table |
-| POST | `/admin/zones` | Create zone | Admin | `name`, `description`, `zip_codes[]`, `distance_band_min`, `distance_band_max`, `min_order_amount`, `delivery_fee`, `delivery_windows[]` | HTML partial (updated table) |
-| PUT | `/admin/zones/<id>` | Update zone | Admin | Same fields as create | HTML partial (updated row) |
-| DELETE | `/admin/zones/<id>` | Soft-delete/deactivate zone | Admin | — | HTML partial (updated row) |
-| GET | `/delivery/check` | Check delivery eligibility | Patient, Front Desk | `?zip=<zip_code>` | HTML partial (eligible: fee, windows / not eligible message) |
+| GET | `/coverage/zones` | List all coverage zones | Admin | — | HTML table |
+| POST | `/coverage/zones` | Create zone | Admin | `name`, `description`, `zip_codes`, `neighborhoods`, `distance_band_min`, `distance_band_max`, `min_order_amount`, `delivery_fee` | Redirect to zone list |
+| GET | `/coverage/zones/<id>` | Zone detail | Admin | — | HTML detail page |
+| POST | `/coverage/zones/<id>` | Update zone | Admin | Same fields as create | Redirect to zone detail |
+| POST | `/coverage/zones/<id>/deactivate` | Soft-deactivate zone | Admin | — | Redirect to zone list |
+| POST | `/coverage/zones/<id>/assign` | Assign clinician to zone | Admin | `clinician_id`, `assignment_type` | Redirect to zone detail |
+| POST | `/coverage/zones/<id>/windows` | Add delivery window | Admin | `day_of_week`, `start_time`, `end_time` | Redirect to zone detail |
+| POST | `/coverage/zones/<id>/windows/<wid>/update` | Update delivery window | Admin | `day_of_week`, `start_time`, `end_time` | Redirect to zone detail |
+| POST | `/coverage/zones/<id>/windows/<wid>/delete` | Delete delivery window | Admin | — | Redirect to zone detail |
+| GET | `/coverage/check` | Check delivery eligibility | Patient, Front Desk | `?zip=<zip_code>&neighborhood=<name>&distance=<miles>` | JSON: `{"covered": bool, "zones": [...]}` |
 
 ### Zone Constraints
 - ZIP codes unique across active zones
@@ -193,13 +202,14 @@ Any active → Canceled (admin override, reason required)
 
 ---
 
-## Admin Operations (`/admin/operations`) — Admin Only
+## Admin Operations & Observability (`/admin`) — Admin Only
 
 | Method | Path | Description | Auth | Request | Response |
 |--------|------|-------------|------|---------|----------|
+| GET | `/admin/observability` | Observability dashboard (stats, alerts, slow queries) | Admin | — | HTML dashboard |
 | GET | `/admin/operations` | Operations dashboard | Admin | — | HTML dashboard |
 | GET | `/admin/operations/alerts` | HTMX partial for alerts | Admin | — | HTML partial (alert list) |
-| POST | `/admin/operations/alerts/<id>/acknowledge` | Acknowledge alert | Admin | — | HTML partial (updated alert) |
+| POST | `/admin/operations/alerts/<id>/acknowledge` | Acknowledge alert | Admin | signed nonce/timestamp | Redirect to operations |
 | GET | `/admin/operations/slow-queries` | HTMX partial for slow queries | Admin | — | HTML partial (query table) |
 | GET | `/admin/operations/sessions` | Active sessions | Admin | — | HTML partial (session table) |
 

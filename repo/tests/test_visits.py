@@ -8,7 +8,7 @@ from app.models.scheduling import Clinician, Slot
 from app.models.visit import Visit, VisitTransition
 from app.utils.state_machine import transition_visit, VALID_TRANSITIONS, TERMINAL_STATES
 from app.extensions import db
-from tests.signing_helpers import signed_data
+from tests.signing_helpers import signed_data, login_data
 
 
 def _create_user(app, username, role="patient", password="Password1"):
@@ -23,7 +23,7 @@ def _create_user(app, username, role="patient", password="Password1"):
 def _login(client, username, password="Password1"):
     return client.post(
         "/auth/login",
-        data={"username": username, "password": password},
+        data=login_data(username, password),
         follow_redirects=True,
     )
 

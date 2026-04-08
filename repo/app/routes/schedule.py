@@ -79,7 +79,7 @@ def available():
 
 
 @schedule_bp.route("/hold/<int:slot_id>", methods=["POST"])
-@login_required
+@role_required("patient")
 @antireplay
 def hold(slot_id):
     slot = db.session.get(Slot, slot_id)
@@ -120,7 +120,7 @@ def hold(slot_id):
 
 
 @schedule_bp.route("/confirm/<int:reservation_id>", methods=["GET"])
-@login_required
+@role_required("patient")
 def confirm_page(reservation_id):
     reservation = db.session.get(Reservation, reservation_id)
     if not reservation or reservation.patient_id != current_user.id:
@@ -147,7 +147,7 @@ def confirm_page(reservation_id):
 
 
 @schedule_bp.route("/confirm/<int:reservation_id>", methods=["POST"])
-@login_required
+@role_required("patient")
 @antireplay
 def confirm(reservation_id):
     reservation = db.session.get(Reservation, reservation_id)
@@ -192,7 +192,7 @@ def confirm(reservation_id):
 
 
 @schedule_bp.route("/cancel/<int:reservation_id>", methods=["POST"])
-@login_required
+@role_required("patient")
 @antireplay
 def cancel(reservation_id):
     reservation = db.session.get(Reservation, reservation_id)
@@ -200,8 +200,7 @@ def cancel(reservation_id):
         flash("Reservation not found.", "danger")
         return redirect(url_for("schedule.my_appointments"))
 
-    # Allow patient to cancel own, or staff to cancel any
-    if reservation.patient_id != current_user.id and current_user.role not in ("administrator", "front_desk"):
+    if reservation.patient_id != current_user.id:
         flash("Access denied.", "danger")
         return redirect(url_for("schedule.my_appointments"))
 

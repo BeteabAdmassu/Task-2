@@ -1,0 +1,19 @@
+{% if slow_queries %}
+<table class="table">
+    <thead>
+        <tr><th>Endpoint</th><th>Duration (ms)</th><th>Correlation ID</th><th>Timestamp</th></tr>
+    </thead>
+    <tbody>
+        {% for sq in slow_queries %}
+        <tr>
+            <td>{{ sq.endpoint }}</td>
+            <td>{{ "%.1f"|format(sq.duration_ms) }}</td>
+            <td>{{ sq.correlation_id or "" }}</td>
+            <td>{{ sq.timestamp }}</td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% else %}
+<p>No slow queries recorded.</p>
+{% endif %}

@@ -33,3 +33,8 @@ def signed_data(method: str, path: str, extra: dict | None = None) -> dict:
     if extra:
         data.update(extra)
     return data
+
+
+def login_data(username: str, password: str = "Password1") -> dict:
+    """Return form data for a signed login POST."""
+    return signed_data("POST", "/auth/login", {"username": username, "password": password})

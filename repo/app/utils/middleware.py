@@ -3,12 +3,60 @@ import time
 from datetime import datetime, timezone, timedelta
 from flask import g, request, session, redirect, url_for, flash
 from flask_login import current_user, logout_user
+from sqlalchemy import event
 import logging
 
 SESSION_TIMEOUT_MINUTES = 30
+SLOW_QUERY_THRESHOLD_MS = 100
+
+
+def _register_query_timing(app):
+    """Instrument SQLAlchemy to track individual query execution times."""
+    from app.extensions import db
+
+    with app.app_context():
+        engine = db.engine
+
+    @event.listens_for(engine, "before_cursor_execute")
+    def before_cursor_execute(conn, cursor, statement, parameters, context, executemany):
+        conn.info.setdefault("query_start_time", []).append(time.time())
+
+    @event.listens_for(engine, "after_cursor_execute")
+    def after_cursor_execute(conn, cursor, statement, parameters, context, executemany):
+        start_times = conn.info.get("query_start_time")
+        if not start_times:
+            return
+        elapsed_ms = (time.time() - start_times.pop()) * 1000
+        if elapsed_ms > SLOW_QUERY_THRESHOLD_MS:
+            logger = logging.getLogger("meridiancare.db")
+            try:
+                correlation_id = getattr(g, "correlation_id", "unknown")
+            except RuntimeError:
+                correlation_id = "unknown"
+            # Redact parameters to avoid logging sensitive data
+            logger.warning(
+                "SLOW QUERY duration=%.1fms statement=%s correlation_id=%s",
+                elapsed_ms, statement[:200], correlation_id,
+            )
+            try:
+                from app.models.audit import SlowQuery as SlowQueryModel
+                sq = SlowQueryModel(
+                    endpoint=f"SQL: {statement[:200]}",
+                    duration_ms=elapsed_ms,
+                    correlation_id=correlation_id,
+                )
+                db.session.add(sq)
+                db.session.commit()
+            except Exception:
+                try:
+                    db.session.rollback()
+                except Exception:
+                    pass
 
 
 def register_middleware(app):
+    _register_query_timing(app)
+
     @app.before_request
     def set_correlation_id():
         g.correlation_id = request.headers.get("X-Correlation-ID", str(uuid.uuid4()))

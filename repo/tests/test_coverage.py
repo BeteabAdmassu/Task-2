@@ -5,9 +5,21 @@ from app.models.user import User
 from app.models.scheduling import Clinician
 from app.models.coverage import CoverageZone, ZoneAssignment, ZoneDeliveryWindow
 from app.extensions import db
-from tests.signing_helpers import signed_data
+from tests.signing_helpers import signed_data, login_data
 
 _ZONES_PATH = "/coverage/zones"
+_patient_counter = 0
+
+
+@pytest.fixture
+def patient_client(client, app, db):
+    """Return a test client logged in as a patient."""
+    global _patient_counter
+    _patient_counter += 1
+    uname = f"_cov_pat_{_patient_counter}"
+    _create_user(app, uname, role="patient")
+    _login(client, uname)
+    return client
 
 
 def _create_user(app, username, role="patient", password="Password1"):
@@ -22,7 +34,7 @@ def _create_user(app, username, role="patient", password="Password1"):
 def _login(client, username, password="Password1"):
     return client.post(
         "/auth/login",
-        data={"username": username, "password": password},
+        data=login_data(username, password),
         follow_redirects=True,
     )
 
@@ -110,26 +122,26 @@ def test_assign_clinician_to_zone(client, app, db):
         assert a.assignment_type == "primary"
 
 
-def test_check_coverage_covered(client, app, db):
+def test_check_coverage_covered(patient_client, app, db):
     with app.app_context():
         zone = CoverageZone(name="CheckZone", zip_codes_json=["50001"], is_active=True)
         db.session.add(zone)
         db.session.commit()
-    resp = client.get("/coverage/check?zip=50001")
+    resp = patient_client.get("/coverage/check?zip=50001")
     assert resp.status_code == 200
     data = resp.get_json()
     assert data["covered"] is True
 
 
-def test_check_coverage_not_covered(client, app, db):
-    resp = client.get("/coverage/check?zip=99999")
+def test_check_coverage_not_covered(patient_client, app, db):
+    resp = patient_client.get("/coverage/check?zip=99999")
     assert resp.status_code == 200
     data = resp.get_json()
     assert data["covered"] is False
 
 
-def test_check_coverage_no_zip(client, app, db):
-    resp = client.get("/coverage/check?zip=")
+def test_check_coverage_no_zip(patient_client, app, db):
+    resp = patient_client.get("/coverage/check?zip=")
     assert resp.status_code == 400
 
 
@@ -159,7 +171,7 @@ def test_create_zone_with_new_fields(client, app, db):
         assert zone.delivery_fee == 5.99
 
 
-def test_check_coverage_returns_fee_and_minimum(client, app, db):
+def test_check_coverage_returns_fee_and_minimum(patient_client, app, db):
     from datetime import time as dt_time
     with app.app_context():
         zone = CoverageZone(
@@ -179,7 +191,7 @@ def test_check_coverage_returns_fee_and_minimum(client, app, db):
         )
         db.session.add(window)
         db.session.commit()
-    resp = client.get("/coverage/check?zip=70001")
+    resp = patient_client.get("/coverage/check?zip=70001")
     assert resp.status_code == 200
     data = resp.get_json()
     assert data["covered"] is True
@@ -326,7 +338,7 @@ def test_delete_delivery_window(client, app, db):
         assert ZoneDeliveryWindow.query.get(wid) is None
 
 
-def test_coverage_check_shows_configured_windows(client, app, db):
+def test_coverage_check_shows_configured_windows(patient_client, app, db):
     """Delivery windows added via CRUD are returned by /coverage/check."""
     from datetime import time as dt_time
     with app.app_context():
@@ -342,7 +354,7 @@ def test_coverage_check_shows_configured_windows(client, app, db):
         )
         db.session.add(w)
         db.session.commit()
-    resp = client.get("/coverage/check?zip=90001")
+    resp = patient_client.get("/coverage/check?zip=90001")
     assert resp.status_code == 200
     data = resp.get_json()
     assert data["covered"] is True
@@ -542,49 +554,49 @@ def _make_zone_with_band(app, name, zips, band_min, band_max, neighborhoods=None
         return zone.id
 
 
-def test_check_coverage_distance_within_band(client, app, db):
+def test_check_coverage_distance_within_band(patient_client, app, db):
     """ZIP + distance within band → covered."""
     _make_zone_with_band(app, "BandZone1", ["11001"], 0.0, 10.0)
-    resp = client.get("/coverage/check?zip=11001&distance=5.0")
+    resp = patient_client.get("/coverage/check?zip=11001&distance=5.0")
     assert resp.status_code == 200
     data = resp.get_json()
     assert data["covered"] is True
     assert data["zones"][0]["distance_band_max"] == 10.0
 
 
-def test_check_coverage_distance_at_band_boundary(client, app, db):
+def test_check_coverage_distance_at_band_boundary(patient_client, app, db):
     """Distance exactly at band_max is included (inclusive upper bound)."""
     _make_zone_with_band(app, "BandZone2", ["11002"], 0.0, 10.0)
-    resp = client.get("/coverage/check?zip=11002&distance=10.0")
+    resp = patient_client.get("/coverage/check?zip=11002&distance=10.0")
     assert resp.status_code == 200
     assert resp.get_json()["covered"] is True
 
 
-def test_check_coverage_distance_outside_band(client, app, db):
+def test_check_coverage_distance_outside_band(patient_client, app, db):
     """Distance beyond band_max → not covered even if ZIP matches."""
     _make_zone_with_band(app, "BandZone3", ["11003"], 0.0, 10.0)
-    resp = client.get("/coverage/check?zip=11003&distance=15.0")
+    resp = patient_client.get("/coverage/check?zip=11003&distance=15.0")
     assert resp.status_code == 200
     assert resp.get_json()["covered"] is False
 
 
-def test_check_coverage_distance_below_band_min(client, app, db):
+def test_check_coverage_distance_below_band_min(patient_client, app, db):
     """Distance below band_min → not covered."""
     _make_zone_with_band(app, "BandZone4", ["11004"], 5.0, 20.0)
-    resp = client.get("/coverage/check?zip=11004&distance=2.0")
+    resp = patient_client.get("/coverage/check?zip=11004&distance=2.0")
     assert resp.status_code == 200
     assert resp.get_json()["covered"] is False
 
 
-def test_check_coverage_band_zone_no_distance_provided(client, app, db):
+def test_check_coverage_band_zone_no_distance_provided(patient_client, app, db):
     """Zone with distance band configured but no distance param → not covered."""
     _make_zone_with_band(app, "BandZone5", ["11005"], 0.0, 10.0)
-    resp = client.get("/coverage/check?zip=11005")
+    resp = patient_client.get("/coverage/check?zip=11005")
     assert resp.status_code == 200
     assert resp.get_json()["covered"] is False
 
 
-def test_check_coverage_no_band_without_distance(client, app, db):
+def test_check_coverage_no_band_without_distance(patient_client, app, db):
     """Zone with distance_band_max=0 (no constraint) → covered without distance."""
     with app.app_context():
         zone = CoverageZone(
@@ -593,26 +605,26 @@ def test_check_coverage_no_band_without_distance(client, app, db):
         )
         db.session.add(zone)
         db.session.commit()
-    resp = client.get("/coverage/check?zip=11006")
+    resp = patient_client.get("/coverage/check?zip=11006")
     assert resp.status_code == 200
     assert resp.get_json()["covered"] is True
 
 
-def test_check_coverage_invalid_distance(client, app, db):
+def test_check_coverage_invalid_distance(patient_client, app, db):
     """Non-numeric distance value → 400."""
-    resp = client.get("/coverage/check?zip=11007&distance=far")
+    resp = patient_client.get("/coverage/check?zip=11007&distance=far")
     assert resp.status_code == 400
     data = resp.get_json()
     assert "distance" in data.get("error", "").lower()
 
 
-def test_check_coverage_negative_distance(client, app, db):
+def test_check_coverage_negative_distance(patient_client, app, db):
     """Negative distance → 400."""
-    resp = client.get("/coverage/check?zip=11008&distance=-1")
+    resp = patient_client.get("/coverage/check?zip=11008&distance=-1")
     assert resp.status_code == 400
 
 
-def test_check_coverage_neighborhood_match(client, app, db):
+def test_check_coverage_neighborhood_match(patient_client, app, db):
     """Neighborhood match (without ZIP) → covered."""
     with app.app_context():
         zone = CoverageZone(
@@ -623,12 +635,12 @@ def test_check_coverage_neighborhood_match(client, app, db):
         )
         db.session.add(zone)
         db.session.commit()
-    resp = client.get("/coverage/check?neighborhood=Riverside")
+    resp = patient_client.get("/coverage/check?neighborhood=Riverside")
     assert resp.status_code == 200
     assert resp.get_json()["covered"] is True
 
 
-def test_check_coverage_neighborhood_no_match(client, app, db):
+def test_check_coverage_neighborhood_no_match(patient_client, app, db):
     """Neighborhood not in zone → not covered."""
     with app.app_context():
         zone = CoverageZone(
@@ -639,12 +651,12 @@ def test_check_coverage_neighborhood_no_match(client, app, db):
         )
         db.session.add(zone)
         db.session.commit()
-    resp = client.get("/coverage/check?neighborhood=Downtown")
+    resp = patient_client.get("/coverage/check?neighborhood=Downtown")
     assert resp.status_code == 200
     assert resp.get_json()["covered"] is False
 
 
-def test_check_coverage_neighborhood_with_distance_band(client, app, db):
+def test_check_coverage_neighborhood_with_distance_band(patient_client, app, db):
     """Neighborhood match + distance within band → covered."""
     with app.app_context():
         zone = CoverageZone(
@@ -657,24 +669,24 @@ def test_check_coverage_neighborhood_with_distance_band(client, app, db):
         )
         db.session.add(zone)
         db.session.commit()
-    resp = client.get("/coverage/check?neighborhood=Eastside&distance=6.0")
+    resp = patient_client.get("/coverage/check?neighborhood=Eastside&distance=6.0")
     assert resp.status_code == 200
     assert resp.get_json()["covered"] is True
 
 
-def test_check_coverage_no_location_identifier(client, app, db):
+def test_check_coverage_no_location_identifier(patient_client, app, db):
     """Neither zip nor neighborhood → 400 with clear error."""
-    resp = client.get("/coverage/check")
+    resp = patient_client.get("/coverage/check")
     assert resp.status_code == 400
     data = resp.get_json()
     assert "error" in data
     assert "zip" in data["error"].lower() or "neighborhood" in data["error"].lower()
 
 
-def test_check_coverage_response_includes_band_fields(client, app, db):
+def test_check_coverage_response_includes_band_fields(patient_client, app, db):
     """Successful match includes distance_band_min and distance_band_max in response."""
     _make_zone_with_band(app, "BandFieldZone", ["11099"], 2.0, 15.0)
-    resp = client.get("/coverage/check?zip=11099&distance=10.0")
+    resp = patient_client.get("/coverage/check?zip=11099&distance=10.0")
     assert resp.status_code == 200
     data = resp.get_json()
     assert data["covered"] is True

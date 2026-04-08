@@ -1,0 +1,19 @@
+{% if active_users %}
+<table class="table">
+    <thead>
+        <tr><th>Username</th><th>Role</th><th>Active</th><th>Last Login</th></tr>
+    </thead>
+    <tbody>
+        {% for user in active_users %}
+        <tr>
+            <td>{{ user.username }}</td>
+            <td>{{ user.role }}</td>
+            <td>{{ "Yes" if user.is_active else "No" }}</td>
+            <td>{{ user.last_login_at or "N/A" }}</td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% else %}
+<p>No active users found.</p>
+{% endif %}

@@ -16,7 +16,7 @@ from app.models.user import User
 from app.models.scheduling import Clinician
 from app.models.visit import Visit
 from app.extensions import db as _db
-from tests.signing_helpers import signed_data
+from tests.signing_helpers import signed_data, login_data
 
 
 # ---------------------------------------------------------------------------
@@ -55,7 +55,7 @@ def _create_visit(app, patient_id, clinician_id, status="booked"):
 def _login(client, username, password="Password1"):
     return client.post(
         "/auth/login",
-        data={"username": username, "password": password},
+        data=login_data(username, password),
         follow_redirects=True,
     )
 
@@ -253,7 +253,7 @@ class TestOpenRedirect:
         _create_user(app, "pat_redir1")
         resp = client.post(
             "/auth/login?next=http://evil.example.com/steal",
-            data={"username": "pat_redir1", "password": "Password1"},
+            data=login_data("pat_redir1"),
             follow_redirects=False,
         )
         assert resp.status_code in (302, 200)
@@ -265,14 +265,14 @@ class TestOpenRedirect:
         _create_user(app, "pat_redir2")
         resp = client.post(
             "/auth/login?next=//evil.example.com/steal",
-            data={"username": "pat_redir2", "password": "Password2Aa"},
+            data=login_data("pat_redir2", "Password2Aa"),
             follow_redirects=False,
         )
         # If login fails due to password, re-do with correct password
         _create_user(app, "pat_redir2b")
         resp = client.post(
             "/auth/login?next=//evil.example.com/steal",
-            data={"username": "pat_redir2b", "password": "Password1"},
+            data=login_data("pat_redir2b"),
             follow_redirects=False,
         )
         location = resp.headers.get("Location", "")
@@ -283,7 +283,7 @@ class TestOpenRedirect:
         _create_user(app, "pat_redir3")
         resp = client.post(
             "/auth/login?next=/patient/demographics",
-            data={"username": "pat_redir3", "password": "Password1"},
+            data=login_data("pat_redir3"),
             follow_redirects=False,
         )
         assert resp.status_code == 302
@@ -295,7 +295,7 @@ class TestOpenRedirect:
         _create_user(app, "pat_redir4")
         resp = client.post(
             "/auth/login?next=https://evil.example.com/",
-            data={"username": "pat_redir4", "password": "Password1"},
+            data=login_data("pat_redir4"),
             headers={"HX-Request": "true"},
         )
         hx_redirect = resp.headers.get("HX-Redirect", "")

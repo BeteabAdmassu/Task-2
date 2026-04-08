@@ -6,7 +6,7 @@ from app.models.user import User
 from app.models.scheduling import Clinician, ScheduleTemplate, Slot, Reservation, Holiday, Room, expire_stale_holds
 from app.models.visit import Visit
 from app.extensions import db
-from tests.signing_helpers import signed_data
+from tests.signing_helpers import signed_data, login_data
 
 
 def _create_user(app, username, role="patient", password="Password1"):
@@ -21,7 +21,7 @@ def _create_user(app, username, role="patient", password="Password1"):
 def _login(client, username, password="Password1"):
     return client.post(
         "/auth/login",
-        data={"username": username, "password": password},
+        data=login_data(username, password),
         follow_redirects=True,
     )
 

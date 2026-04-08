@@ -44,9 +44,17 @@ def calculate_scores(answers):
     )
     scores["fall_risk"] = {"flags": fall_risk_flags, "total_questions": 4}
 
-    # Medication adherence
-    adherence = answers.get("med_adherence", "never_miss")
-    scores["medication_adherence"] = {"level": adherence}
+    # Medication adherence: 4-question scale (each 0-3, total 0-12)
+    med_total = sum(int(answers.get(f"med_adherence_q{i}", 0)) for i in range(1, 5))
+    if med_total <= 2:
+        adherence_level = "never_miss"
+    elif med_total <= 5:
+        adherence_level = "rarely_miss"
+    elif med_total <= 8:
+        adherence_level = "sometimes_miss"
+    else:
+        adherence_level = "often_miss"
+    scores["medication_adherence"] = {"level": adherence_level, "total": med_total, "total_questions": 4}
 
     return scores
 
@@ -170,14 +178,12 @@ DEFAULT_TEMPLATE = {
         {
             "id": "med_adherence",
             "title": "Medication Adherence",
-            "description": "How often do you miss taking your prescribed medications?",
+            "description": "Over the last 2 weeks, how often have you experienced the following? (0 = Never, 1 = Rarely, 2 = Sometimes, 3 = Often)",
             "questions": [
-                {
-                    "id": "med_adherence",
-                    "text": "Medication adherence",
-                    "type": "select",
-                    "options": ["never_miss", "rarely_miss", "sometimes_miss", "often_miss"],
-                },
+                {"id": "med_adherence_q1", "text": "Forgot to take your prescribed medications", "type": "scale_0_3"},
+                {"id": "med_adherence_q2", "text": "Decided to skip a dose of your medications", "type": "scale_0_3"},
+                {"id": "med_adherence_q3", "text": "Ran out of medication before getting a refill", "type": "scale_0_3"},
+                {"id": "med_adherence_q4", "text": "Missed medications due to side effects or feeling unwell", "type": "scale_0_3"},
             ],
         },
     ],

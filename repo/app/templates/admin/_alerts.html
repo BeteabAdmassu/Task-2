@@ -1,0 +1,30 @@
+{% if alerts %}
+<table class="table">
+    <thead>
+        <tr><th>Type</th><th>Severity</th><th>Message</th><th>Created</th><th>Status</th><th>Action</th></tr>
+    </thead>
+    <tbody>
+        {% for alert in alerts %}
+        <tr>
+            <td>{{ alert.alert_type }}</td>
+            <td>{{ alert.severity }}</td>
+            <td>{{ alert.message }}</td>
+            <td>{{ alert.created_at }}</td>
+            <td>{% if alert.acknowledged_at %}Acknowledged{% else %}Open{% endif %}</td>
+            <td>
+                {% if not alert.acknowledged_at %}
+                {% set _ack_action = url_for('observability.acknowledge_alert', alert_id=alert.id) %}
+                <form method="POST" action="{{ _ack_action }}">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    {{ antireplay_inputs("POST", _ack_action) }}
+                    <button type="submit" class="btn btn-sm btn-warning">Acknowledge</button>
+                </form>
+                {% endif %}
+            </td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% else %}
+<p>No recent alerts.</p>
+{% endif %}

@@ -155,6 +155,7 @@ def register():
 
 
 @auth_bp.route("/login", methods=["GET", "POST"])
+@antireplay
 def login():
     if current_user.is_authenticated:
         return redirect(url_for(_get_dashboard_for_role(current_user.role)))
@@ -177,11 +178,11 @@ def login():
                     error=msg,
                     username=username,
                     locked_seconds=remaining,
-                )
+                ), 429
             flash(msg, "danger")
             return render_template(
                 "auth/login.html", username=username, locked_seconds=remaining
-            )
+            ), 429
 
         user = User.query.filter_by(username=username).first()
         if user and user.is_active and user.check_password(password):

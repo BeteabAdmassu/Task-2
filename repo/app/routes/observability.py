@@ -78,6 +78,31 @@ def operations():
     )
 
 
+@observability_bp.route("/operations/alerts")
+@role_required("administrator")
+def operations_alerts():
+    """HTMX partial for anomaly alerts list."""
+    alerts = AnomalyAlert.query.order_by(AnomalyAlert.created_at.desc()).limit(50).all()
+    return render_template("admin/_alerts.html", alerts=alerts)
+
+
+@observability_bp.route("/operations/slow-queries")
+@role_required("administrator")
+def operations_slow_queries():
+    """HTMX partial for slow query table."""
+    slow_queries = SlowQuery.query.order_by(SlowQuery.timestamp.desc()).limit(50).all()
+    return render_template("admin/_slow_queries.html", slow_queries=slow_queries)
+
+
+@observability_bp.route("/operations/sessions")
+@role_required("administrator")
+def operations_sessions():
+    """HTMX partial for active sessions."""
+    from app.models.user import User
+    active_users = User.query.filter_by(is_active=True).order_by(User.last_login_at.desc()).all()
+    return render_template("admin/_sessions.html", active_users=active_users)
+
+
 @observability_bp.route("/operations/alerts/<int:alert_id>/acknowledge", methods=["POST"])
 @role_required("administrator")
 @antireplay

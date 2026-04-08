@@ -1,6 +1,7 @@
 """Tests for prompt 02 — authentication & account management."""
 
 import pytest
+from tests.signing_helpers import login_data
 
 
 def test_register_page_loads(client):
@@ -106,7 +107,7 @@ def test_login_success(client, app):
 
         resp = client.post(
             "/auth/login",
-            data={"username": "loginuser", "password": "Password1"},
+            data=login_data("loginuser", "Password1"),
             follow_redirects=True,
         )
         assert resp.status_code == 200
@@ -116,7 +117,7 @@ def test_login_invalid_credentials(client, app):
     with app.app_context():
         resp = client.post(
             "/auth/login",
-            data={"username": "noone", "password": "Wrong1234"},
+            data=login_data("noone", "Wrong1234"),
         )
         assert b"Invalid username or password" in resp.data
 
@@ -134,7 +135,7 @@ def test_login_generic_error_message(client, app):
 
         resp = client.post(
             "/auth/login",
-            data={"username": "realuser", "password": "WrongPass1"},
+            data=login_data("realuser", "WrongPass1"),
         )
         assert b"Invalid username or password" in resp.data
         assert b"password is wrong" not in resp.data.lower()
@@ -153,7 +154,7 @@ def test_logout(client, app):
 
         client.post(
             "/auth/login",
-            data={"username": "logoutuser", "password": "Password1"},
+            data=login_data("logoutuser", "Password1"),
         )
         resp = client.post("/auth/logout", follow_redirects=True)
         assert resp.status_code == 200
@@ -173,12 +174,12 @@ def test_rate_limiting(client, app):
         for _ in range(10):
             client.post(
                 "/auth/login",
-                data={"username": "ratelimited", "password": "WrongPass1"},
+                data=login_data("ratelimited", "WrongPass1"),
             )
 
         resp = client.post(
             "/auth/login",
-            data={"username": "ratelimited", "password": "Password1"},
+            data=login_data("ratelimited", "Password1"),
         )
         assert b"Too many login attempts" in resp.data
 
@@ -236,7 +237,7 @@ def test_deactivated_user_cannot_login(client, app):
 
         resp = client.post(
             "/auth/login",
-            data={"username": "deactivated_user", "password": "Password1"},
+            data=login_data("deactivated_user", "Password1"),
         )
         assert b"Invalid username or password" in resp.data
 
@@ -247,7 +248,7 @@ def test_login_attempt_recording(client, app):
 
         client.post(
             "/auth/login",
-            data={"username": "nobody", "password": "WrongPass1"},
+            data=login_data("nobody", "WrongPass1"),
         )
         attempts = LoginAttempt.query.filter_by(username="nobody").all()
         assert len(attempts) == 1

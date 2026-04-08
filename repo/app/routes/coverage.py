@@ -1,5 +1,6 @@
 from datetime import time as dt_time
 from flask import Blueprint, render_template, request, flash, redirect, url_for, jsonify
+from flask_login import login_required
 from app.extensions import db
 from app.models.coverage import CoverageZone, ZoneAssignment, ZoneDeliveryWindow
 from app.models.scheduling import Clinician
@@ -93,10 +94,33 @@ def create_zone():
     neighborhoods_raw = request.form.get("neighborhoods", "").strip()
     neighborhoods = [n.strip() for n in neighborhoods_raw.split(",") if n.strip()]
 
+    if min_order_amount < 0:
+        flash("Minimum order amount must be non-negative.", "danger")
+        return redirect(url_for("coverage.zones"))
+    if delivery_fee < 0:
+        flash("Delivery fee must be non-negative.", "danger")
+        return redirect(url_for("coverage.zones"))
+    if distance_band_min < 0 or distance_band_max < 0:
+        flash("Distance bands must be non-negative.", "danger")
+        return redirect(url_for("coverage.zones"))
+    if distance_band_max > 0 and distance_band_min > distance_band_max:
+        flash("Minimum distance band cannot exceed maximum.", "danger")
+        return redirect(url_for("coverage.zones"))
+
     existing = CoverageZone.query.filter_by(name=name).first()
     if existing:
         flash("A zone with this name already exists.", "danger")
         return redirect(url_for("coverage.zones"))
+
+    # Check ZIP uniqueness across active zones
+    if zip_codes:
+        active_zones = CoverageZone.query.filter_by(is_active=True).all()
+        for az in active_zones:
+            existing_zips = set(az.zip_codes_json or [])
+            overlap = existing_zips & set(zip_codes)
+            if overlap:
+                flash(f"ZIP code(s) {', '.join(sorted(overlap))} already assigned to active zone '{az.name}'.", "danger")
+                return redirect(url_for("coverage.zones"))
 
     zone = CoverageZone(
         name=name,
@@ -125,6 +149,99 @@ def zone_detail(zone_id):
         return redirect(url_for("coverage.zones"))
     clinicians = Clinician.query.all()
     return render_template("coverage/zone_detail.html", zone=zone, clinicians=clinicians)
+
+
+@coverage_bp.route("/zones/<int:zone_id>", methods=["POST"])
+@role_required("administrator")
+@antireplay
+def update_zone(zone_id):
+    """Update an existing coverage zone."""
+    zone = db.session.get(CoverageZone, zone_id)
+    if not zone:
+        flash("Zone not found.", "danger")
+        return redirect(url_for("coverage.zones"))
+
+    name = request.form.get("name", "").strip()
+    description = request.form.get("description", "").strip()
+    zip_codes_raw = request.form.get("zip_codes", "").strip()
+
+    if not name:
+        flash("Zone name is required.", "danger")
+        return redirect(url_for("coverage.zone_detail", zone_id=zone_id))
+
+    distance_band_min = request.form.get("distance_band_min", 0, type=float)
+    distance_band_max = request.form.get("distance_band_max", 0, type=float)
+    min_order_amount = request.form.get("min_order_amount", 0, type=float)
+    delivery_fee = request.form.get("delivery_fee", 0, type=float)
+
+    if min_order_amount < 0:
+        flash("Minimum order amount must be non-negative.", "danger")
+        return redirect(url_for("coverage.zone_detail", zone_id=zone_id))
+    if delivery_fee < 0:
+        flash("Delivery fee must be non-negative.", "danger")
+        return redirect(url_for("coverage.zone_detail", zone_id=zone_id))
+    if distance_band_min < 0 or distance_band_max < 0:
+        flash("Distance bands must be non-negative.", "danger")
+        return redirect(url_for("coverage.zone_detail", zone_id=zone_id))
+    if distance_band_max > 0 and distance_band_min > distance_band_max:
+        flash("Minimum distance band cannot exceed maximum.", "danger")
+        return redirect(url_for("coverage.zone_detail", zone_id=zone_id))
+
+    zip_codes = [z.strip() for z in zip_codes_raw.split(",") if z.strip()]
+    neighborhoods_raw = request.form.get("neighborhoods", "").strip()
+    neighborhoods = [n.strip() for n in neighborhoods_raw.split(",") if n.strip()]
+
+    # Check name uniqueness (excluding self)
+    existing = CoverageZone.query.filter(
+        CoverageZone.name == name, CoverageZone.id != zone_id
+    ).first()
+    if existing:
+        flash("A zone with this name already exists.", "danger")
+        return redirect(url_for("coverage.zone_detail", zone_id=zone_id))
+
+    # Check ZIP uniqueness across other active zones
+    if zip_codes:
+        active_zones = CoverageZone.query.filter(
+            CoverageZone.is_active == True, CoverageZone.id != zone_id
+        ).all()
+        for az in active_zones:
+            existing_zips = set(az.zip_codes_json or [])
+            overlap = existing_zips & set(zip_codes)
+            if overlap:
+                flash(f"ZIP code(s) {', '.join(sorted(overlap))} already assigned to active zone '{az.name}'.", "danger")
+                return redirect(url_for("coverage.zone_detail", zone_id=zone_id))
+
+    zone.name = name
+    zone.description = description
+    zone.zip_codes_json = zip_codes
+    zone.neighborhoods_json = neighborhoods
+    zone.distance_band_min = distance_band_min
+    zone.distance_band_max = distance_band_max
+    zone.min_order_amount = min_order_amount
+    zone.delivery_fee = delivery_fee
+    db.session.commit()
+
+    log_action("update_zone", "coverage_zone", zone.id, {"name": name})
+    flash(f"Zone '{name}' updated.", "success")
+    return redirect(url_for("coverage.zone_detail", zone_id=zone_id))
+
+
+@coverage_bp.route("/zones/<int:zone_id>/deactivate", methods=["POST"])
+@role_required("administrator")
+@antireplay
+def deactivate_zone(zone_id):
+    """Soft-deactivate a coverage zone."""
+    zone = db.session.get(CoverageZone, zone_id)
+    if not zone:
+        flash("Zone not found.", "danger")
+        return redirect(url_for("coverage.zones"))
+
+    zone.is_active = False
+    db.session.commit()
+
+    log_action("deactivate_zone", "coverage_zone", zone.id, {"name": zone.name})
+    flash(f"Zone '{zone.name}' deactivated.", "info")
+    return redirect(url_for("coverage.zones"))
 
 
 @coverage_bp.route("/zones/<int:zone_id>/assign", methods=["POST"])
@@ -260,6 +377,7 @@ def update_window(zone_id, window_id):
 
 
 @coverage_bp.route("/check")
+@role_required("patient", "front_desk")
 def check_coverage():
     """Check coverage for a given ZIP code, optional neighborhood, and optional distance.
 
