@@ -26,6 +26,8 @@ services:
       - FLASK_ENV=testing
     tmpfs:
       - /app/data
+    volumes:
+      - ../docs:/docs:ro
     network_mode: host
     profiles:
       - test

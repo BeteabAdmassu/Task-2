@@ -650,11 +650,24 @@ def test_concurrent_holds_live_http(tmp_path):
     db_path = str(tmp_path / "conc_live.db")
     live_app = _create_app("testing")
     live_app.config["SQLALCHEMY_DATABASE_URI"] = f"sqlite:///{db_path}"
+    # NullPool: every WSGI thread gets its own connection — no shared connection state.
+    # WAL mode + busy_timeout (set via connect event) allow concurrent readers/writers
+    # without "database is locked" or InterfaceError under Werkzeug's threaded server.
+    from sqlalchemy.pool import NullPool as _NullPool
+    from sqlalchemy import event as _sa_event
     live_app.config["SQLALCHEMY_ENGINE_OPTIONS"] = {
         "connect_args": {"check_same_thread": False},
+        "poolclass": _NullPool,
     }
 
     with live_app.app_context():
+        @_sa_event.listens_for(_db.engine, "connect")
+        def _set_wal_pragmas(dbapi_conn, _record):
+            cursor = dbapi_conn.cursor()
+            cursor.execute("PRAGMA journal_mode=WAL")
+            cursor.execute("PRAGMA busy_timeout=5000")
+            cursor.close()
+
         _db.create_all()
 
         u1 = _User(username="lh_pat1", role="patient")
