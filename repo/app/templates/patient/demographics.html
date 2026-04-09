@@ -11,4 +11,33 @@
         {% include "patient/_demographics_form.html" %}
     </div>
 </div>
+
+<div class="card mt-4">
+    <div class="card-header">
+        <h2>My Data</h2>
+    </div>
+    <div class="card-body">
+        <h3>Export My Data</h3>
+        <p>Download a copy of all personal data associated with your account.</p>
+        <a href="{{ url_for('patient.export_data') }}" class="btn btn-secondary">Download My Data (JSON)</a>
+    </div>
+</div>
+
+<div class="card mt-4 border-danger">
+    <div class="card-header bg-danger text-white">
+        <h2>Delete My Account</h2>
+    </div>
+    <div class="card-body">
+        <p><strong>Warning:</strong> This action is irreversible. Your personal information will be anonymized. Visit records and assessment scores are retained in de-identified form for medical recordkeeping.</p>
+        <form method="post" action="{{ url_for('patient.delete_account') }}">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            {{ antireplay_inputs("POST", url_for('patient.delete_account')) }}
+            <div class="form-group">
+                <label for="delete-password">Confirm your password to proceed</label>
+                <input type="password" id="delete-password" name="password" class="form-control" required autocomplete="current-password">
+            </div>
+            <button type="submit" class="btn btn-danger mt-2">Delete My Account</button>
+        </form>
+    </div>
+</div>
 {% endblock %}

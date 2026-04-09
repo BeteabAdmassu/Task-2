@@ -221,3 +221,58 @@ def test_non_patient_cannot_access_patient_demographics(client, app):
     resp = client.get("/patient/demographics", follow_redirects=True)
     # Front desk is redirected away
     assert resp.status_code == 200
+
+
+# ── F-02 regression: export and delete-account UI wiring ──
+
+def test_demographics_page_has_export_link(client, app):
+    """Patient demographics page must contain a link to the data export endpoint."""
+    _create_user(app, "ui_export_pat")
+    _login(client, "ui_export_pat")
+    resp = client.get("/patient/demographics")
+    assert resp.status_code == 200
+    assert b"/patient/export" in resp.data
+
+
+def test_demographics_page_has_delete_account_form(client, app):
+    """Patient demographics page must contain the delete-account form with anti-replay fields."""
+    _create_user(app, "ui_delete_pat")
+    _login(client, "ui_delete_pat")
+    resp = client.get("/patient/demographics")
+    assert resp.status_code == 200
+    assert b"/patient/delete-account" in resp.data
+    # Anti-replay fields required by the delete-account endpoint
+    assert b'name="_nonce"' in resp.data
+    assert b'name="_timestamp"' in resp.data
+    assert b'name="_signature"' in resp.data
+    # Password confirmation field must be present
+    assert b'name="password"' in resp.data
+
+
+# ── F-05 regression: reveal endpoint must escape HTML in decrypted values ──
+
+def test_reveal_field_xss_escaped(client, app):
+    """Reveal endpoint must return HTML-escaped output, not raw script tags."""
+    _create_user(app, "xss_pat")
+    _login(client, "xss_pat")
+
+    # Store a value containing an XSS payload as insurance_id
+    xss_payload = "<script>alert(1)</script>"
+    demo_with_xss = dict(DEMO_DATA)
+    demo_with_xss["insurance_id"] = xss_payload
+    client.post(
+        _DEMO_PATH,
+        data=signed_data("POST", _DEMO_PATH, demo_with_xss),
+        follow_redirects=True,
+    )
+
+    _reveal_path = "/patient/demographics/reveal"
+    resp = client.post(
+        _reveal_path,
+        data=signed_data("POST", _reveal_path, {"field": "insurance_id"}),
+    )
+    assert resp.status_code == 200
+    # Raw script tag must NOT appear in response
+    assert b"<script>" not in resp.data
+    # HTML-escaped form must be present
+    assert b"&lt;script&gt;" in resp.data

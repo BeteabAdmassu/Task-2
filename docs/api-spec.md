@@ -9,7 +9,7 @@ All endpoints are REST-style, consumed by HTMX partial updates. Responses return
 | Method | Path | Description | Auth | Request | Response |
 |--------|------|-------------|------|---------|----------|
 | GET | `/health` | Basic health check | None | — | `{"status": "ok", "timestamp": "ISO8601"}` |
-| GET | `/health/detailed` | Extended health (DB, disk, scheduler, encryption key) | Admin | — | `{"status": "ok", "database": "ok", "disk_space_mb": 1024, "scheduler": "running", "encryption_key": "loaded"}` |
+| GET | `/health/detailed` | Extended health (DB status and table row counts) | Admin | — | `{"status": "ok", "database": "ok", "tables": {"users": 5, ...}}` |
 
 ---
 

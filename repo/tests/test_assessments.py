@@ -390,3 +390,49 @@ def test_assessment_idempotency_still_works_with_hashed_token(client, app):
         token_hash = hashlib.sha256(raw_token.encode()).hexdigest()
         count = AssessmentResult.query.filter_by(request_token=token_hash).count()
         assert count == 1  # exactly one result despite two submits
+
+
+# ── F-01 regression: non-patient roles must be blocked from patient-flow routes ──
+
+@pytest.mark.parametrize("role", ["clinician", "administrator", "front_desk"])
+def test_non_patient_role_blocked_from_assessment_start(client, app, role):
+    """Staff/admin roles must receive 403 on the patient-only /assessments/start route."""
+    username = f"np_start_{role}"
+    _create_user(app, username, role=role)
+    _login(client, username)
+    resp = client.get("/assessments/start", follow_redirects=False)
+    assert resp.status_code == 403
+
+
+@pytest.mark.parametrize("role", ["clinician", "administrator", "front_desk"])
+def test_non_patient_role_blocked_from_wizard_step(client, app, role):
+    """Staff/admin roles must receive 403 on POST /assessments/step/<n>."""
+    username = f"np_step_{role}"
+    _create_user(app, username, role=role)
+    _login(client, username)
+    resp = client.post("/assessments/step/1", data={"csrf_token": "x"}, follow_redirects=False)
+    assert resp.status_code == 403
+
+
+@pytest.mark.parametrize("role", ["clinician", "administrator", "front_desk"])
+def test_non_patient_role_blocked_from_save_draft(client, app, role):
+    """Staff/admin roles must receive 403 on POST /assessments/save-draft."""
+    username = f"np_draft_{role}"
+    _create_user(app, username, role=role)
+    _login(client, username)
+    resp = client.post("/assessments/save-draft", data={"csrf_token": "x"}, follow_redirects=False)
+    assert resp.status_code == 403
+
+
+@pytest.mark.parametrize("role", ["clinician", "administrator", "front_desk"])
+def test_non_patient_role_blocked_from_submit(client, app, role):
+    """Staff/admin roles must receive 403 on POST /assessments/submit."""
+    username = f"np_submit_{role}"
+    _create_user(app, username, role=role)
+    _login(client, username)
+    resp = client.post(
+        _SUBMIT_PATH,
+        data=signed_data("POST", _SUBMIT_PATH, {"request_token": "tok"}),
+        follow_redirects=False,
+    )
+    assert resp.status_code == 403

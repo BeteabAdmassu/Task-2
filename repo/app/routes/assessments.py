@@ -17,7 +17,7 @@ TOTAL_STEPS = 5  # PHQ-9, GAD-7, BP, Fall Risk, Med Adherence
 
 @assessments_bp.route("/start")
 @assessments_bp.route("/start/<int:visit_id>")
-@login_required
+@role_required("patient")
 def start(visit_id=None):
     template = get_or_create_default_template(db.session)
     sections = template.questions
@@ -48,7 +48,7 @@ def start(visit_id=None):
 
 
 @assessments_bp.route("/step/<int:step>", methods=["POST"])
-@login_required
+@role_required("patient")
 def wizard_step(step):
     template = get_or_create_default_template(db.session)
     sections = template.questions
@@ -110,7 +110,7 @@ def wizard_step(step):
 
 
 @assessments_bp.route("/submit", methods=["POST"])
-@login_required
+@role_required("patient")
 @antireplay
 def submit():
     template = get_or_create_default_template(db.session)
@@ -123,7 +123,7 @@ def submit():
         if visit is None:
             flash("Invalid visit: not found.", "danger")
             return redirect(url_for("assessments.start", visit_id=visit_id))
-        if current_user.role == "patient" and visit.patient_id != current_user.id:
+        if visit.patient_id != current_user.id:
             flash("Invalid visit: access denied.", "danger")
             return redirect(url_for("assessments.start"))
 
@@ -206,7 +206,7 @@ def history():
 
 
 @assessments_bp.route("/save-draft", methods=["POST"])
-@login_required
+@role_required("patient")
 def save_draft():
     template = get_or_create_default_template(db.session)
     visit_id = request.form.get("visit_id", type=int)

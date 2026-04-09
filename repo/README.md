@@ -92,14 +92,14 @@ python -m pytest tests/ --ignore=tests/e2e/ -v
 bash run_tests.sh
 ```
 
-This script will:
+This script requires the web container to already be running (`docker compose up web -d`).
+
+It will:
 1. Run unit/integration tests via pytest
-2. Check that Docker is running
-3. Build and start the app in a Docker container
-4. Wait for the `/health` endpoint to respond
-5. Run Playwright E2E tests against the containerized app
-6. Tear down the Docker container
-7. Exit with code 0 on success, non-zero on failure
+2. Check that Docker is running and the web container is up
+3. Wait for the `/health` endpoint to respond
+4. Run Playwright E2E tests against the containerized app
+5. Exit with code 0 on success, non-zero on failure
 
 ## Token-at-Rest Protection
 
