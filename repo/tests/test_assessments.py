@@ -436,3 +436,208 @@ def test_non_patient_role_blocked_from_submit(client, app, role):
         follow_redirects=False,
     )
     assert resp.status_code == 403
+
+# ── F-02 regression: malformed/out-of-range assessment values must return 422 ──
+
+def _setup_dirty_draft(app, username, bad_answers):
+    """Create a patient with a draft containing bad_answers, return user id."""
+    from app.models.assessment import AssessmentDraft
+    import json as _json
+    uid = _create_user(app, username)
+    with app.app_context():
+        from app.utils.scoring import get_or_create_default_template
+        tmpl = get_or_create_default_template(db.session)
+        draft = AssessmentDraft(
+            patient_id=uid,
+            visit_id=None,
+            template_id=tmpl.id,
+            partial_answers_json=_json.dumps(bad_answers),
+            current_step=5,
+        )
+        db.session.add(draft)
+        db.session.commit()
+    return uid
+
+
+def test_submit_rejects_non_numeric_phq9(client, app):
+    """PHQ-9 value 'abc' must produce 422, not 500."""
+    bad = dict(LOW_RISK_ANSWERS)
+    bad["phq9_q1"] = "abc"
+    _setup_dirty_draft(app, "val_nnum1", bad)
+    _login(client, "val_nnum1")
+    resp = client.post(
+        _SUBMIT_PATH,
+        data=signed_data("POST", _SUBMIT_PATH, {"request_token": "tok1"}),
+        headers={"HX-Request": "true"},
+    )
+    assert resp.status_code == 422
+
+
+def test_submit_rejects_out_of_range_phq9(client, app):
+    """PHQ-9 value 5 (out of 0-3 range) must produce 422."""
+    bad = dict(LOW_RISK_ANSWERS)
+    bad["phq9_q3"] = "5"
+    _setup_dirty_draft(app, "val_range1", bad)
+    _login(client, "val_range1")
+    resp = client.post(
+        _SUBMIT_PATH,
+        data=signed_data("POST", _SUBMIT_PATH, {"request_token": "tok2"}),
+        headers={"HX-Request": "true"},
+    )
+    assert resp.status_code == 422
+
+
+def test_submit_rejects_invalid_bp_category(client, app):
+    """Unrecognised bp_category must produce 422."""
+    bad = dict(LOW_RISK_ANSWERS)
+    bad["bp_category"] = "Hypertensive Emergency"
+    _setup_dirty_draft(app, "val_bp1", bad)
+    _login(client, "val_bp1")
+    resp = client.post(
+        _SUBMIT_PATH,
+        data=signed_data("POST", _SUBMIT_PATH, {"request_token": "tok3"}),
+        headers={"HX-Request": "true"},
+    )
+    assert resp.status_code == 422
+
+
+def test_submit_rejects_invalid_yes_no_field(client, app):
+    """fall_history value 'maybe' must produce 422."""
+    bad = dict(LOW_RISK_ANSWERS)
+    bad["fall_history"] = "maybe"
+    _setup_dirty_draft(app, "val_yesno1", bad)
+    _login(client, "val_yesno1")
+    resp = client.post(
+        _SUBMIT_PATH,
+        data=signed_data("POST", _SUBMIT_PATH, {"request_token": "tok4"}),
+        headers={"HX-Request": "true"},
+    )
+    assert resp.status_code == 422
+
+
+def test_submit_accepts_valid_answers(client, app):
+    """Valid LOW_RISK_ANSWERS must still produce a 200/redirect (not broken by validation)."""
+    _setup_dirty_draft(app, "val_ok1", LOW_RISK_ANSWERS)
+    _login(client, "val_ok1")
+    resp = client.post(
+        _SUBMIT_PATH,
+        data=signed_data("POST", _SUBMIT_PATH, {"request_token": "tok5"}),
+        headers={"HX-Request": "true"},
+        follow_redirects=True,
+    )
+    assert resp.status_code == 200
+
+
+# ── On-behalf submit validation regression tests ──
+
+def _setup_behalf_dirty_draft(app, patient_username, bad_answers):
+    """Create patient + staff user and a draft with bad_answers for the patient."""
+    import json as _json
+    pid = _create_user(app, patient_username)
+    with app.app_context():
+        from app.utils.scoring import get_or_create_default_template
+        tmpl = get_or_create_default_template(db.session)
+        draft = AssessmentDraft(
+            patient_id=pid,
+            visit_id=None,
+            template_id=tmpl.id,
+            partial_answers_json=_json.dumps(bad_answers),
+            current_step=5,
+        )
+        db.session.add(draft)
+        db.session.commit()
+    return pid
+
+
+def _login_staff(client, app, username):
+    staff_id = _create_user(app, username, role="front_desk")
+    _login(client, username)
+    return staff_id
+
+
+def test_behalf_submit_rejects_non_numeric_phq9(client, app):
+    """On-behalf: PHQ-9 value 'xyz' must return 422, not 500."""
+    bad = dict(LOW_RISK_ANSWERS)
+    bad["phq9_q2"] = "xyz"
+    pid = _setup_behalf_dirty_draft(app, "ob_val_nn1", bad)
+    _login_staff(client, app, "ob_fd_nn1")
+
+    path = f"/assessments/behalf/{pid}/submit"
+    resp = client.post(
+        path,
+        data=signed_data("POST", path, {"request_token": "ob-tok1"}),
+        headers={"HX-Request": "true"},
+    )
+    assert resp.status_code == 422
+    with app.app_context():
+        assert AssessmentResult.query.filter_by(patient_id=pid).count() == 0
+
+
+def test_behalf_submit_rejects_out_of_range_gad7(client, app):
+    """On-behalf: GAD-7 value 9 (> 3 max) must return 422."""
+    bad = dict(LOW_RISK_ANSWERS)
+    bad["gad7_q4"] = "9"
+    pid = _setup_behalf_dirty_draft(app, "ob_val_range1", bad)
+    _login_staff(client, app, "ob_fd_range1")
+
+    path = f"/assessments/behalf/{pid}/submit"
+    resp = client.post(
+        path,
+        data=signed_data("POST", path, {"request_token": "ob-tok2"}),
+        headers={"HX-Request": "true"},
+    )
+    assert resp.status_code == 422
+    with app.app_context():
+        assert AssessmentResult.query.filter_by(patient_id=pid).count() == 0
+
+
+def test_behalf_submit_rejects_invalid_bp_category(client, app):
+    """On-behalf: unrecognised bp_category must return 422."""
+    bad = dict(LOW_RISK_ANSWERS)
+    bad["bp_category"] = "Unknown"
+    pid = _setup_behalf_dirty_draft(app, "ob_val_bp1", bad)
+    _login_staff(client, app, "ob_fd_bp1")
+
+    path = f"/assessments/behalf/{pid}/submit"
+    resp = client.post(
+        path,
+        data=signed_data("POST", path, {"request_token": "ob-tok3"}),
+        headers={"HX-Request": "true"},
+    )
+    assert resp.status_code == 422
+    with app.app_context():
+        assert AssessmentResult.query.filter_by(patient_id=pid).count() == 0
+
+
+def test_behalf_submit_rejects_invalid_yes_no(client, app):
+    """On-behalf: fall_history value 'sometimes' must return 422."""
+    bad = dict(LOW_RISK_ANSWERS)
+    bad["fall_history"] = "sometimes"
+    pid = _setup_behalf_dirty_draft(app, "ob_val_yesno1", bad)
+    _login_staff(client, app, "ob_fd_yesno1")
+
+    path = f"/assessments/behalf/{pid}/submit"
+    resp = client.post(
+        path,
+        data=signed_data("POST", path, {"request_token": "ob-tok4"}),
+        headers={"HX-Request": "true"},
+    )
+    assert resp.status_code == 422
+    with app.app_context():
+        assert AssessmentResult.query.filter_by(patient_id=pid).count() == 0
+
+
+def test_behalf_submit_accepts_valid_answers(client, app):
+    """On-behalf: valid LOW_RISK_ANSWERS must succeed (validation does not regress happy path)."""
+    pid = _setup_behalf_dirty_draft(app, "ob_val_ok1", LOW_RISK_ANSWERS)
+    _login_staff(client, app, "ob_fd_ok1")
+
+    path = f"/assessments/behalf/{pid}/submit"
+    resp = client.post(
+        path,
+        data=signed_data("POST", path, {"request_token": "ob-tok5"}),
+        follow_redirects=True,
+    )
+    assert resp.status_code == 200
+    with app.app_context():
+        assert AssessmentResult.query.filter_by(patient_id=pid).count() == 1

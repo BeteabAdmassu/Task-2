@@ -2,6 +2,60 @@
 
 import json
 
+# ---------------------------------------------------------------------------
+# Validation constants
+# ---------------------------------------------------------------------------
+_PHQ9_FIELDS = [f"phq9_q{i}" for i in range(1, 10)]
+_GAD7_FIELDS = [f"gad7_q{i}" for i in range(1, 8)]
+_MED_ADH_FIELDS = [f"med_adherence_q{i}" for i in range(1, 5)]
+_BP_CATEGORIES = {"Normal", "Elevated", "Stage 1", "Stage 2", "Crisis"}
+_YES_NO_FIELDS = {"fall_history", "mobility_aids", "dizziness", "balance_meds"}
+_MED_ADH_STRINGS = {"never_miss", "rarely_miss", "sometimes_miss", "often_miss"}
+
+
+def validate_assessment_answers(answers):
+    """Validate assessment answer values server-side.
+
+    Checks each field that is present in *answers*.  Fields that are absent
+    are not required (draft steps submit partial data).
+
+    Returns a list of human-readable error strings; empty list means valid.
+    """
+    errors = []
+
+    for field in _PHQ9_FIELDS + _GAD7_FIELDS + _MED_ADH_FIELDS:
+        val = answers.get(field)
+        if val is None:
+            continue
+        try:
+            n = int(val)
+        except (ValueError, TypeError):
+            errors.append(f"{field}: must be a whole number")
+            continue
+        if not (0 <= n <= 3):
+            errors.append(f"{field}: value {n!r} is out of range (0–3)")
+
+    bp = answers.get("bp_category")
+    if bp is not None and bp not in _BP_CATEGORIES:
+        errors.append(
+            f"bp_category: {bp!r} is not a recognised category "
+            f"({', '.join(sorted(_BP_CATEGORIES))})"
+        )
+
+    for field in _YES_NO_FIELDS:
+        val = answers.get(field)
+        if val is not None and val not in ("yes", "no"):
+            errors.append(f"{field}: must be 'yes' or 'no', got {val!r}")
+
+    med_str = answers.get("med_adherence")
+    if med_str is not None and med_str not in _MED_ADH_STRINGS:
+        errors.append(
+            f"med_adherence: {med_str!r} is not a recognised value "
+            f"({', '.join(sorted(_MED_ADH_STRINGS))})"
+        )
+
+    return errors
+
 
 def calculate_scores(answers):
     """Calculate individual scale scores from answers dict."""

@@ -25,24 +25,39 @@ def generate_pending_reminders(user_id=None):
 
 
 def _generate_appointment_reminders(user_id=None):
-    """Create appointment reminders for confirmed reservations with slot date within 24 hours."""
-    now = datetime.now(timezone.utc)
-    tomorrow = (now + timedelta(hours=24)).date()
+    """Create appointment reminders for confirmed reservations whose slot starts within 24 hours.
 
-    # Find confirmed reservations whose slot date is tomorrow (within 24h)
+    Eligibility window: now <= slot_datetime < now + 24h, where slot_datetime is
+    derived from Slot.date + Slot.start_time (treated as UTC).  The DB query
+    pre-filters by date range; the Python loop applies the exact datetime check.
+    """
+    now = datetime.now(timezone.utc)
+    window_end = now + timedelta(hours=24)
+
+    # Pre-filter: at most two calendar dates can overlap the 24h window.
+    date_lo = now.date()
+    date_hi = window_end.date()
+
     query = (
         db.session.query(Reservation)
         .join(Slot, Reservation.slot_id == Slot.id)
         .filter(
             Reservation.status == "confirmed",
-            Slot.date == tomorrow,
+            Slot.date >= date_lo,
+            Slot.date <= date_hi,
         )
     )
     if user_id is not None:
         query = query.filter(Reservation.patient_id == user_id)
-    confirmed = query.all()
+    candidates = query.all()
 
-    for res in confirmed:
+    for res in candidates:
+        # Exact datetime check: slot must start within [now, now+24h).
+        slot_dt = datetime.combine(res.slot.date, res.slot.start_time).replace(
+            tzinfo=timezone.utc
+        )
+        if not (now <= slot_dt < window_end):
+            continue
         # Dedup by patient_id + related_entity_type + related_entity_id
         existing = Reminder.query.filter_by(
             patient_id=res.patient_id,

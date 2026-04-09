@@ -5,7 +5,7 @@ from flask_login import login_required, current_user
 from app.extensions import db
 from app.models.assessment import AssessmentTemplate, AssessmentResult, AssessmentDraft
 from app.models.visit import Visit
-from app.utils.scoring import calculate_scores, calculate_risk_level, get_or_create_default_template
+from app.utils.scoring import calculate_scores, calculate_risk_level, get_or_create_default_template, validate_assessment_answers
 from app.utils.auth import role_required
 from app.utils.antireplay import antireplay
 from app.utils.idempotency import hash_token as _hash_token
@@ -13,6 +13,20 @@ from app.utils.idempotency import hash_token as _hash_token
 assessments_bp = Blueprint("assessments", __name__, url_prefix="/assessments")
 
 TOTAL_STEPS = 5  # PHQ-9, GAD-7, BP, Fall Risk, Med Adherence
+
+
+def _validation_error_response(errors, fallback_redirect):
+    """Return a validation-error response for both HTMX and plain-HTTP callers.
+
+    HTMX callers receive a 422 HTML fragment; plain-HTTP callers get flash
+    messages and the provided redirect.
+    """
+    if request.headers.get("HX-Request"):
+        error_html = "".join(f"<p>{e}</p>" for e in errors)
+        return f"<div class='alert alert-danger'>{error_html}</div>", 422
+    for e in errors:
+        flash(e, "danger")
+    return fallback_redirect
 
 
 @assessments_bp.route("/start")
@@ -146,6 +160,15 @@ def submit():
         return redirect(url_for("assessments.start", visit_id=visit_id))
 
     answers = json.loads(draft.partial_answers_json)
+
+    # Server-side validation — prevents 500 on malformed/out-of-range values.
+    validation_errors = validate_assessment_answers(answers)
+    if validation_errors:
+        return _validation_error_response(
+            validation_errors,
+            redirect(url_for("assessments.start", visit_id=visit_id)),
+        )
+
     scores = calculate_scores(answers)
     risk_level, explanations = calculate_risk_level(scores)
 
@@ -384,6 +407,15 @@ def behalf_submit(patient_id):
         return redirect(url_for("assessments.behalf_start", patient_id=patient_id))
 
     answers = json.loads(draft.partial_answers_json)
+
+    # Server-side validation — same guard as the patient submit path.
+    validation_errors = validate_assessment_answers(answers)
+    if validation_errors:
+        return _validation_error_response(
+            validation_errors,
+            redirect(url_for("assessments.behalf_start", patient_id=patient_id)),
+        )
+
     scores = calculate_scores(answers)
     risk_level, explanations = calculate_risk_level(scores)
 

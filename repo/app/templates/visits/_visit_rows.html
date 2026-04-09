@@ -13,7 +13,8 @@
         {% set _is_terminal = target in ('canceled', 'no_show') %}
         <form method="POST" action="{{ _action }}"
               style="display:inline-block; vertical-align:top; margin-bottom:0.25rem;"
-              hx-post="{{ _action }}" hx-target="#visit-rows" hx-swap="innerHTML">
+              hx-post="{{ _action }}" hx-target="#visit-rows" hx-swap="innerHTML"
+              hx-disabled-elt="find button[type='submit']">
             <input type="hidden" name="target_state" value="{{ target }}">
             <input type="hidden" name="request_token" value="{{ generate_request_token() }}">
             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
@@ -22,7 +23,8 @@
             <input type="text" name="reason" placeholder="Reason (required)" required
                    class="form-control form-control-sm" style="width:140px; display:inline-block;">
             {% endif %}
-            <button type="submit" class="btn btn-sm btn-{{ 'danger' if _is_terminal else 'primary' }}">
+            <button type="submit" class="btn btn-sm btn-{{ 'danger' if _is_terminal else 'primary' }}"
+                    data-loading-text="Saving...">
                 {{ target | replace('_', ' ') | title }}
             </button>
         </form>

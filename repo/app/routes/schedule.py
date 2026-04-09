@@ -114,8 +114,21 @@ def hold(slot_id):
         request_token=_hash_token(raw_token) if raw_token else None,
     )
     db.session.add(reservation)
-    db.session.commit()
+    # Flush to acquire the write lock and get an ID, but don't commit yet.
+    # SQLite serialises writers, so the recount below sees every concurrent
+    # hold that has already been flushed/committed in another transaction.
+    db.session.flush()
 
+    active_count = Reservation.query.filter(
+        Reservation.slot_id == slot.id,
+        Reservation.status.in_(["held", "confirmed"]),
+    ).count()
+    if active_count > slot.capacity:
+        db.session.rollback()
+        flash("This slot is no longer available.", "warning")
+        return redirect(url_for("schedule.available"))
+
+    db.session.commit()
     return redirect(url_for("schedule.confirm_page", reservation_id=reservation.id))
 
 
@@ -271,6 +284,17 @@ def behalf_hold(patient_id, slot_id):
         request_token=_hash_token(raw_token) if raw_token else None,
     )
     db.session.add(reservation)
+    db.session.flush()
+
+    active_count = Reservation.query.filter(
+        Reservation.slot_id == slot.id,
+        Reservation.status.in_(["held", "confirmed"]),
+    ).count()
+    if active_count > slot.capacity:
+        db.session.rollback()
+        flash("This slot is no longer available.", "warning")
+        return redirect(url_for("schedule.available"))
+
     db.session.commit()
 
     log_action(

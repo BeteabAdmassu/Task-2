@@ -142,8 +142,7 @@ def test_reminder_new_fields(app, db):
 
 
 def test_auto_generate_appointment_reminder(client, app, db):
-    """Confirmed reservation with slot 24h away should generate an appointment reminder."""
-    from datetime import time
+    """Confirmed reservation with slot 12h away should generate an appointment reminder."""
     from app.models.scheduling import Clinician, Slot, Reservation
     from app.utils.reminders import generate_pending_reminders
 
@@ -154,10 +153,14 @@ def test_auto_generate_appointment_reminder(client, app, db):
         db.session.add(clinician)
         db.session.flush()
 
-        tomorrow = (datetime.now(timezone.utc) + timedelta(hours=24)).date()
+        # Use a slot 12 hours from now — always within the 24h window regardless
+        # of time-of-day the test runs.
+        slot_dt = datetime.now(timezone.utc) + timedelta(hours=12)
         slot = Slot(
-            clinician_id=clinician.id, date=tomorrow,
-            start_time=time(9, 0), end_time=time(9, 15),
+            clinician_id=clinician.id,
+            date=slot_dt.date(),
+            start_time=slot_dt.time().replace(second=0, microsecond=0),
+            end_time=(slot_dt + timedelta(minutes=15)).time().replace(second=0, microsecond=0),
             capacity=1, booked_count=1, status="available",
         )
         db.session.add(slot)
@@ -173,7 +176,7 @@ def test_auto_generate_appointment_reminder(client, app, db):
         generate_pending_reminders()
 
         reminder = Reminder.query.filter_by(
-            patient_id=uid, type="appointment", due_date=tomorrow
+            patient_id=uid, type="appointment",
         ).first()
         assert reminder is not None
         assert reminder.status == "pending"
@@ -249,7 +252,6 @@ def test_auto_generate_no_duplicate_reminders(client, app, db):
 
 def test_expire_canceled_reservation_reminders(client, app, db):
     """Reminders for canceled reservations should be auto-expired."""
-    from datetime import time
     from app.models.scheduling import Clinician, Slot, Reservation
     from app.utils.reminders import generate_pending_reminders
 
@@ -260,10 +262,13 @@ def test_expire_canceled_reservation_reminders(client, app, db):
         db.session.add(clinician)
         db.session.flush()
 
-        tomorrow = (datetime.now(timezone.utc) + timedelta(hours=24)).date()
+        # Slot 12h from now — always within the 24h window.
+        slot_dt = datetime.now(timezone.utc) + timedelta(hours=12)
         slot = Slot(
-            clinician_id=clinician.id, date=tomorrow,
-            start_time=time(10, 0), end_time=time(10, 15),
+            clinician_id=clinician.id,
+            date=slot_dt.date(),
+            start_time=slot_dt.time().replace(second=0, microsecond=0),
+            end_time=(slot_dt + timedelta(minutes=15)).time().replace(second=0, microsecond=0),
             capacity=1, booked_count=1, status="available",
         )
         db.session.add(slot)
@@ -584,3 +589,99 @@ def test_default_interval_does_not_trigger_for_recent_assessment(app, db):
             patient_id=uid, type="reassessment", status="pending"
         ).first()
         assert reminder is None  # 75 days < 90-day default threshold
+
+
+# ── F-01 regression: reminder timing uses true datetime window, not date bucket ──
+
+def _make_appointment_reminder_setup(app, uid, slot_hours_from_now):
+    """Helper: create clinician, slot N hours from now, confirmed reservation."""
+    from datetime import time as _time
+    from app.models.scheduling import Clinician, Slot, Reservation
+
+    clin_uid = _create_user(app, f"clin_timing_{slot_hours_from_now}_{uid}")
+    with app.app_context():
+        now = datetime.now(timezone.utc)
+        slot_dt = now + timedelta(hours=slot_hours_from_now)
+        clinician = Clinician(user_id=clin_uid, specialty="General")
+        db.session.add(clinician)
+        db.session.flush()
+        slot = Slot(
+            clinician_id=clinician.id,
+            date=slot_dt.date(),
+            start_time=slot_dt.time().replace(second=0, microsecond=0),
+            end_time=(slot_dt + timedelta(minutes=15)).time().replace(second=0, microsecond=0),
+            capacity=1,
+            booked_count=1,
+            status="available",
+        )
+        db.session.add(slot)
+        db.session.flush()
+        res = Reservation(
+            slot_id=slot.id,
+            patient_id=uid,
+            status="confirmed",
+            confirmed_at=now,
+        )
+        db.session.add(res)
+        db.session.commit()
+        return res.id
+
+
+def test_reminder_generated_for_slot_12h_away(app, db):
+    """Slot 12h from now is within the 24h window → reminder must be created."""
+    from app.utils.reminders import generate_pending_reminders
+
+    uid = _create_user(app, "rem_timing_12h")
+    _make_appointment_reminder_setup(app, uid, slot_hours_from_now=12)
+
+    with app.app_context():
+        generate_pending_reminders(user_id=uid)
+        count = Reminder.query.filter_by(patient_id=uid, type="appointment").count()
+        assert count == 1, "Slot 12h away should produce a reminder"
+
+
+def test_reminder_not_generated_for_slot_25h_away(app, db):
+    """Slot 25h from now is outside the 24h window → no reminder."""
+    from app.utils.reminders import generate_pending_reminders
+
+    uid = _create_user(app, "rem_timing_25h")
+    _make_appointment_reminder_setup(app, uid, slot_hours_from_now=25)
+
+    with app.app_context():
+        generate_pending_reminders(user_id=uid)
+        count = Reminder.query.filter_by(patient_id=uid, type="appointment").count()
+        assert count == 0, "Slot 25h away should not produce a reminder"
+
+
+def test_reminder_not_generated_for_past_slot(app, db):
+    """Slot 2h in the past is outside the window → no reminder."""
+    from app.utils.reminders import generate_pending_reminders
+    from app.models.scheduling import Clinician, Slot, Reservation
+
+    uid = _create_user(app, "rem_timing_past")
+    clin_uid = _create_user(app, "clin_timing_past")
+    with app.app_context():
+        now = datetime.now(timezone.utc)
+        past_dt = now - timedelta(hours=2)
+        clinician = Clinician(user_id=clin_uid, specialty="General")
+        db.session.add(clinician)
+        db.session.flush()
+        slot = Slot(
+            clinician_id=clinician.id,
+            date=past_dt.date(),
+            start_time=past_dt.time().replace(second=0, microsecond=0),
+            end_time=(past_dt + timedelta(minutes=15)).time().replace(second=0, microsecond=0),
+            capacity=1, booked_count=1, status="available",
+        )
+        db.session.add(slot)
+        db.session.flush()
+        res = Reservation(
+            slot_id=slot.id, patient_id=uid, status="confirmed",
+            confirmed_at=now,
+        )
+        db.session.add(res)
+        db.session.commit()
+
+        generate_pending_reminders(user_id=uid)
+        count = Reminder.query.filter_by(patient_id=uid, type="appointment").count()
+        assert count == 0, "Past slot should not produce a reminder"

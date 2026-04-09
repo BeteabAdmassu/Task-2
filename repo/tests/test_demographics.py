@@ -252,20 +252,33 @@ def test_demographics_page_has_delete_account_form(client, app):
 # ── F-05 regression: reveal endpoint must escape HTML in decrypted values ──
 
 def test_reveal_field_xss_escaped(client, app):
-    """Reveal endpoint must return HTML-escaped output, not raw script tags."""
-    _create_user(app, "xss_pat")
-    _login(client, "xss_pat")
+    """Reveal endpoint must return HTML-escaped output, not raw script tags.
 
-    # Store a value containing an XSS payload as insurance_id
+    The form-level ID_RE validation prevents storing XSS payloads via the normal
+    form flow.  This test bypasses the form and directly inserts an encrypted
+    record, simulating data that was inserted before input validation existed or
+    via a direct DB write.  The reveal endpoint's escape() call is the last
+    line of defence.
+    """
+    from app.models.demographics import PatientDemographics
+    from app.utils.encryption import encrypt_value
+    from datetime import date as _date
+
+    uid = _create_user(app, "xss_pat")
+
     xss_payload = "<script>alert(1)</script>"
-    demo_with_xss = dict(DEMO_DATA)
-    demo_with_xss["insurance_id"] = xss_payload
-    client.post(
-        _DEMO_PATH,
-        data=signed_data("POST", _DEMO_PATH, demo_with_xss),
-        follow_redirects=True,
-    )
+    with app.app_context():
+        demo = PatientDemographics(
+            user_id=uid,
+            full_name="XSS Test",
+            date_of_birth=_date(1990, 1, 1),
+            phone="555-000-0000",
+            insurance_id_encrypted=encrypt_value(xss_payload),
+        )
+        db.session.add(demo)
+        db.session.commit()
 
+    _login(client, "xss_pat")
     _reveal_path = "/patient/demographics/reveal"
     resp = client.post(
         _reveal_path,
