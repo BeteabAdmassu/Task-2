@@ -95,13 +95,13 @@ All endpoints are REST-style, consumed by HTMX partial updates. Responses return
 | Method | Path | Description | Auth | Request | Response |
 |--------|------|-------------|------|---------|----------|
 | GET | `/schedule/available` | Search available slots | Authenticated | `?date_from=`, `?date_to=`, `?clinician_id=` | HTML slot list |
-| POST | `/schedule/hold/<slot_id>` | Create 10-min reservation hold | Patient | `request_token`, anti-replay fields | Redirect to confirm page |
+| POST | `/schedule/hold/<slot_id>` | Create 10-min reservation hold | Patient | anti-replay fields (required), `request_token` (optional) | Redirect to confirm page |
 | GET | `/schedule/confirm/<reservation_id>` | Confirm page with countdown | Patient | — | HTML confirm page |
 | POST | `/schedule/confirm/<reservation_id>` | Confirm booking | Patient | anti-replay fields | Redirect to my appointments |
 | POST | `/schedule/cancel/<reservation_id>` | Cancel hold or booking | Patient | anti-replay fields | Redirect to my appointments |
-| POST | `/schedule/behalf/<patient_id>/hold/<slot_id>` | Staff hold on behalf | Admin, Front Desk | `request_token` | Redirect to behalf confirm page |
+| POST | `/schedule/behalf/<patient_id>/hold/<slot_id>` | Staff hold on behalf | Admin, Front Desk | anti-replay fields (required), `request_token` (optional) | Redirect to behalf confirm page |
 | GET | `/schedule/behalf/<patient_id>/confirm/<reservation_id>` | Staff confirm page | Admin, Front Desk | — | HTML confirm page |
-| POST | `/schedule/behalf/<patient_id>/confirm/<reservation_id>` | Staff confirm booking | Admin, Front Desk | — | Redirect to staff calendar |
+| POST | `/schedule/behalf/<patient_id>/confirm/<reservation_id>` | Staff confirm booking | Admin, Front Desk | anti-replay fields (required) | Redirect to staff calendar |
 | GET | `/schedule/my-appointments` | Patient's appointments | Authenticated | — | HTML appointment list |
 | GET | `/schedule/staff/calendar` | Staff calendar view | Admin, Clinician, Front Desk | `?week=`, `?clinician_id=` | HTML calendar (week view) |
 | GET/POST | `/schedule/admin/holidays` | List/add holidays | Admin | `date`, `name` (POST) | HTML list |
@@ -222,7 +222,7 @@ Any checked_in → No-Show (reason required)
 | Header | Purpose | Required |
 |--------|---------|----------|
 | `X-CSRFToken` | CSRF protection (HTMX requests) | All POST/PUT/DELETE |
-| `X-Request-Token` | Idempotency token | State-changing operations |
+| `X-Request-Token` | Idempotency token for endpoints that implement token-based dedupe | Optional / endpoint-specific |
 | `X-Timestamp` | Anti-replay ISO-8601 UTC timestamp | Sensitive actions (login, transitions, deletion) |
 | `X-Nonce` | Anti-replay UUID nonce | Sensitive actions |
 | `X-Signature` | HMAC-SHA256 over `METHOD\|path\|nonce\|timestamp` | Sensitive actions |

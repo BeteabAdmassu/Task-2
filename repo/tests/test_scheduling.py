@@ -408,6 +408,22 @@ def test_reservation_token_none_when_not_provided(client, app):
         assert res.request_token is None
 
 
+def test_hold_requires_antireplay_even_when_request_token_optional(client, app):
+    """/schedule/hold requires anti-replay fields; request_token itself is optional."""
+    _, _, sid = _create_clinician_with_slot(app, username="doc_hold_ar")
+    _create_user(app, "pat_hold_ar")
+    _login(client, "pat_hold_ar")
+
+    path = f"/schedule/hold/{sid}"
+    # request_token present but no anti-replay fields => must fail
+    resp = client.post(
+        path,
+        data={"request_token": "optional-token"},
+        follow_redirects=False,
+    )
+    assert resp.status_code == 400
+
+
 def test_hold_expiry_time_driven_without_route(app):
     """expire_stale_holds() expires overdue holds without any HTTP request."""
     pid, cid, sid = _create_clinician_with_slot(app, username="doc_exp_td")
