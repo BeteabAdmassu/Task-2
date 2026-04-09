@@ -32,6 +32,9 @@
                     <a href="{{ url_for('visits.dashboard') }}" hx-get="{{ url_for('visits.dashboard') }}" hx-target="#main-content" hx-select="#main-content" hx-push-url="true">Visits</a>
                     {% endif %}
                     {% if current_user.role == 'patient' %}
+                    <a href="{{ url_for('assessments.history') }}" hx-get="{{ url_for('assessments.history') }}" hx-target="#main-content" hx-select="#main-content" hx-push-url="true">Assessments</a>
+                    <a href="{{ url_for('schedule.available') }}" hx-get="{{ url_for('schedule.available') }}" hx-target="#main-content" hx-select="#main-content" hx-push-url="true">Book Appointment</a>
+                    <a href="{{ url_for('schedule.my_appointments') }}" hx-get="{{ url_for('schedule.my_appointments') }}" hx-target="#main-content" hx-select="#main-content" hx-push-url="true">My Appointments</a>
                     <a href="{{ url_for('notes.my_notes') }}" hx-get="{{ url_for('notes.my_notes') }}" hx-target="#main-content" hx-select="#main-content" hx-push-url="true">My Notes</a>
                     {% endif %}
                     {% if current_user.role == 'patient' %}
@@ -41,6 +44,8 @@
                     {% endif %}
                     {% if current_user.role == 'administrator' %}
                     <a href="{{ url_for('admin.users') }}" hx-get="{{ url_for('admin.users') }}" hx-target="#main-content" hx-select="#main-content" hx-push-url="true">Users</a>
+                    <a href="{{ url_for('admin.clinicians') }}" hx-get="{{ url_for('admin.clinicians') }}" hx-target="#main-content" hx-select="#main-content" hx-push-url="true">Clinicians</a>
+                    <a href="{{ url_for('schedule.bulk_generate') }}" hx-get="{{ url_for('schedule.bulk_generate') }}" hx-target="#main-content" hx-select="#main-content" hx-push-url="true">Schedule Setup</a>
                     <a href="{{ url_for('coverage.zones') }}" hx-get="{{ url_for('coverage.zones') }}" hx-target="#main-content" hx-select="#main-content" hx-push-url="true">Zones</a>
                     <a href="{{ url_for('audit.audit_log') }}" hx-get="{{ url_for('audit.audit_log') }}" hx-target="#main-content" hx-select="#main-content" hx-push-url="true">Audit</a>
                     <a href="{{ url_for('observability.observability') }}" hx-get="{{ url_for('observability.observability') }}" hx-target="#main-content" hx-select="#main-content" hx-push-url="true">System</a>

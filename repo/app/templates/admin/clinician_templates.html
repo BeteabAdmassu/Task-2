@@ -1,0 +1,74 @@
+{% extends "base.html" %}
+{% block title %}Schedule Templates: {{ clinician.user.username }} - MeridianCare{% endblock %}
+
+{% block content %}
+<h1>Schedule Templates: {{ clinician.user.username }}</h1>
+<p><strong>Specialty:</strong> {{ clinician.specialty or 'N/A' }}</p>
+<p><strong>Default Slot Duration:</strong> {{ clinician.default_slot_duration_minutes }} min</p>
+<p><a href="{{ url_for('admin.clinicians') }}" class="btn btn-sm btn-secondary">&larr; Back to Clinicians</a>
+   <a href="{{ url_for('schedule.bulk_generate') }}" class="btn btn-sm btn-secondary">Bulk Generate Slots</a></p>
+
+<h2>Add Schedule Template</h2>
+{% set _tmpl_post = url_for('admin.create_template', clinician_id=clinician.id) %}
+<form method="POST" action="{{ _tmpl_post }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    {{ antireplay_inputs("POST", _tmpl_post) }}
+    <div class="form-group">
+        <label for="day_of_week">Day of Week</label>
+        <select id="day_of_week" name="day_of_week" class="form-control" required>
+            {% for day_num, day_name in day_names.items() %}
+            <option value="{{ day_num }}">{{ day_name }}</option>
+            {% endfor %}
+        </select>
+    </div>
+    <div class="form-group">
+        <label for="start_time">Start Time (HH:MM)</label>
+        <input type="time" id="start_time" name="start_time" class="form-control" required>
+    </div>
+    <div class="form-group">
+        <label for="end_time">End Time (HH:MM)</label>
+        <input type="time" id="end_time" name="end_time" class="form-control" required>
+    </div>
+    <div class="form-group">
+        <label for="slot_duration">Slot Duration (minutes)</label>
+        <input type="number" id="slot_duration" name="slot_duration" class="form-control"
+               min="5" max="120" value="{{ clinician.default_slot_duration_minutes }}">
+    </div>
+    <div class="form-group">
+        <label for="capacity">Capacity per Slot</label>
+        <input type="number" id="capacity" name="capacity" class="form-control" min="1" value="1">
+    </div>
+    <button type="submit" class="btn btn-primary">Add Template</button>
+</form>
+
+<h2>Existing Templates</h2>
+{% if templates %}
+<table class="table">
+    <thead>
+        <tr><th>Day</th><th>Start</th><th>End</th><th>Slot Duration</th><th>Capacity</th><th>Actions</th></tr>
+    </thead>
+    <tbody>
+        {% for t in templates %}
+        <tr>
+            <td>{{ day_names.get(t.day_of_week, t.day_of_week) }}</td>
+            <td>{{ t.start_time.strftime('%H:%M') }}</td>
+            <td>{{ t.end_time.strftime('%H:%M') }}</td>
+            <td>{{ t.slot_duration }} min</td>
+            <td>{{ t.capacity }}</td>
+            <td>
+                {% set _del_tmpl = url_for('admin.delete_template', clinician_id=clinician.id, template_id=t.id) %}
+                <form method="POST" action="{{ _del_tmpl }}" style="display:inline;"
+                      onsubmit="return confirm('Delete this template?');">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    {{ antireplay_inputs("POST", _del_tmpl) }}
+                    <button type="submit" class="btn btn-sm btn-danger">Delete</button>
+                </form>
+            </td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% else %}
+<p>No templates yet. Add one above, then use <a href="{{ url_for('schedule.bulk_generate') }}">Bulk Generate Slots</a> to create appointment slots.</p>
+{% endif %}
+{% endblock %}

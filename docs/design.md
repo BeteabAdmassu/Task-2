@@ -3,7 +3,7 @@
 ## Architecture
 
 ### Overview
-MeridianCare is a self-contained clinic operations platform that runs entirely on an internal workstation or clinic LAN. It follows a monolithic server-rendered architecture with HTMX for dynamic UI updates — no SPA framework, no external service dependencies.
+MeridianCare is a self-contained clinic operations platform that runs entirely on an internal workstation or clinic LAN. It follows a monolithic server-rendered architecture with HTMX for dynamic UI updates -- no SPA framework, no external service dependencies.
 
 ### Architecture Diagram
 ```
@@ -52,10 +52,7 @@ MeridianCare is a self-contained clinic operations platform that runs entirely o
 │  ┌──────────────────────────────────────────────────┐   │
 │  │         APScheduler (in-process)                  │   │
 │  │  • Reservation hold expiry (every 1 min)          │   │
-│  │  • Reassessment reminders (daily)                 │   │
-│  │  • Pre-visit reminders (hourly)                   │   │
-│  │  • Anomaly detection (every 5 min)                │   │
-│  │  • Token cleanup (daily)                          │   │
+│  │  • Reminder generation (every 15 min)             │   │
 │  └──────────────────────────────────────────────────┘   │
 │                                                         │
 │                Flask Server Process                     │

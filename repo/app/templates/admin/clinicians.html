@@ -1,0 +1,59 @@
+{% extends "base.html" %}
+{% block title %}Clinician Profiles - MeridianCare{% endblock %}
+
+{% block content %}
+<h1>Clinician Profiles</h1>
+
+<h2>Create Clinician Profile</h2>
+{% if eligible_users %}
+{% set _clin_post = url_for('admin.create_clinician') %}
+<form method="POST" action="{{ _clin_post }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    {{ antireplay_inputs("POST", _clin_post) }}
+    <div class="form-group">
+        <label for="user_id">User (clinician role)</label>
+        <select id="user_id" name="user_id" class="form-control" required>
+            <option value="">-- Select user --</option>
+            {% for u in eligible_users %}
+            <option value="{{ u.id }}">{{ u.username }}</option>
+            {% endfor %}
+        </select>
+    </div>
+    <div class="form-group">
+        <label for="specialty">Specialty (optional)</label>
+        <input type="text" id="specialty" name="specialty" class="form-control" placeholder="e.g. General, Cardiology">
+    </div>
+    <div class="form-group">
+        <label for="default_slot_duration_minutes">Default Slot Duration (minutes)</label>
+        <input type="number" id="default_slot_duration_minutes" name="default_slot_duration_minutes"
+               class="form-control" min="5" max="120" value="15">
+    </div>
+    <button type="submit" class="btn btn-primary">Create Profile</button>
+</form>
+{% else %}
+<p class="alert alert-info">All clinician-role users already have profiles, or no clinician-role users exist. Assign the clinician role to a user first via <a href="{{ url_for('admin.users') }}">Users</a>.</p>
+{% endif %}
+
+<h2>Existing Clinician Profiles</h2>
+{% if clinicians %}
+<table class="table">
+    <thead>
+        <tr><th>Username</th><th>Specialty</th><th>Slot Duration</th><th>Actions</th></tr>
+    </thead>
+    <tbody>
+        {% for c in clinicians %}
+        <tr>
+            <td>{{ c.user.username }}</td>
+            <td>{{ c.specialty or 'N/A' }}</td>
+            <td>{{ c.default_slot_duration_minutes }} min</td>
+            <td>
+                <a href="{{ url_for('admin.clinician_templates', clinician_id=c.id) }}" class="btn btn-sm btn-secondary">Schedule Templates</a>
+            </td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% else %}
+<p>No clinician profiles yet.</p>
+{% endif %}
+{% endblock %}

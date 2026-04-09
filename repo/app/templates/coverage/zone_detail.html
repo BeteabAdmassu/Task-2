@@ -4,7 +4,58 @@
 {% block content %}
 <h1>Zone: {{ zone.name }}</h1>
 <p>{{ zone.description or 'No description' }}</p>
-<p>ZIP Codes: {{ (zone.zip_codes_json or []) | join(', ') }}</p>
+<p><strong>ZIP Codes:</strong> {{ (zone.zip_codes_json or []) | join(', ') or 'None' }}</p>
+<p><strong>Neighborhoods:</strong> {{ (zone.neighborhoods_json or []) | join(', ') or 'None' }}</p>
+<p><strong>Distance Band:</strong> {{ zone.distance_band_min }} - {{ zone.distance_band_max }} miles (0 = no constraint)</p>
+<p><strong>Minimum Order Amount:</strong> ${{ '%.2f' | format(zone.min_order_amount or 0) }}</p>
+<p><strong>Delivery Fee:</strong> ${{ '%.2f' | format(zone.delivery_fee or 0) }}</p>
+<p><strong>Active:</strong> {{ 'Yes' if zone.is_active else 'No' }}</p>
+
+<h2>Edit Zone Settings</h2>
+{% set _update_action = url_for('coverage.update_zone', zone_id=zone.id) %}
+<form method="POST" action="{{ _update_action }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    {{ antireplay_inputs("POST", _update_action) }}
+    <div class="form-group">
+        <label for="edit_name">Zone Name</label>
+        <input type="text" id="edit_name" name="name" class="form-control" value="{{ zone.name }}" required>
+    </div>
+    <div class="form-group">
+        <label for="edit_description">Description</label>
+        <input type="text" id="edit_description" name="description" class="form-control" value="{{ zone.description or '' }}">
+    </div>
+    <div class="form-group">
+        <label for="edit_zip_codes">ZIP Codes (comma separated)</label>
+        <input type="text" id="edit_zip_codes" name="zip_codes" class="form-control"
+               value="{{ (zone.zip_codes_json or []) | join(', ') }}">
+    </div>
+    <div class="form-group">
+        <label for="edit_neighborhoods">Neighborhoods (comma separated)</label>
+        <input type="text" id="edit_neighborhoods" name="neighborhoods" class="form-control"
+               value="{{ (zone.neighborhoods_json or []) | join(', ') }}">
+    </div>
+    <div class="form-group">
+        <label for="edit_distance_band_min">Distance Band Min (miles)</label>
+        <input type="number" id="edit_distance_band_min" name="distance_band_min" class="form-control"
+               min="0" step="0.1" value="{{ zone.distance_band_min or 0 }}">
+    </div>
+    <div class="form-group">
+        <label for="edit_distance_band_max">Distance Band Max (miles, 0 = no constraint)</label>
+        <input type="number" id="edit_distance_band_max" name="distance_band_max" class="form-control"
+               min="0" step="0.1" value="{{ zone.distance_band_max or 0 }}">
+    </div>
+    <div class="form-group">
+        <label for="edit_min_order_amount">Minimum Order Amount ($)</label>
+        <input type="number" id="edit_min_order_amount" name="min_order_amount" class="form-control"
+               min="0" step="0.01" value="{{ zone.min_order_amount or 0 }}">
+    </div>
+    <div class="form-group">
+        <label for="edit_delivery_fee">Delivery Fee ($)</label>
+        <input type="number" id="edit_delivery_fee" name="delivery_fee" class="form-control"
+               min="0" step="0.01" value="{{ zone.delivery_fee or 0 }}">
+    </div>
+    <button type="submit" class="btn btn-primary">Save Zone</button>
+</form>
 
 <h2>Delivery Windows</h2>
 {% set windows = zone.delivery_windows.all() %}

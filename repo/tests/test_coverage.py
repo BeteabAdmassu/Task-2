@@ -693,3 +693,115 @@ def test_check_coverage_response_includes_band_fields(patient_client, app, db):
     z = data["zones"][0]
     assert z["distance_band_min"] == 2.0
     assert z["distance_band_max"] == 15.0
+
+
+# ---------------------------------------------------------------------------
+# F-02: Zone UI create/update field round-trip tests
+# ---------------------------------------------------------------------------
+
+def _admin_client(client, app, username="adm_f02"):
+    _create_user(app, username, role="administrator")
+    _login(client, username)
+    return client
+
+
+def test_create_zone_ui_all_fields_persisted(client, app, db):
+    """Creating a zone via UI with all policy fields stores them correctly."""
+    _admin_client(client, app, "adm_f02_create")
+    resp = client.post(
+        "/coverage/zones",
+        data=signed_data("POST", "/coverage/zones", {
+            "name": "UIFieldZone",
+            "description": "Test zone for field round-trip",
+            "zip_codes": "55001, 55002",
+            "neighborhoods": "Downtown, Midtown",
+            "distance_band_min": "1.5",
+            "distance_band_max": "12.0",
+            "min_order_amount": "20.00",
+            "delivery_fee": "3.50",
+        }),
+        follow_redirects=True,
+    )
+    assert resp.status_code == 200
+
+    with app.app_context():
+        zone = CoverageZone.query.filter_by(name="UIFieldZone").first()
+        assert zone is not None
+        assert set(zone.zip_codes_json) == {"55001", "55002"}
+        assert set(zone.neighborhoods_json) == {"Downtown", "Midtown"}
+        assert zone.distance_band_min == 1.5
+        assert zone.distance_band_max == 12.0
+        assert zone.min_order_amount == 20.0
+        assert zone.delivery_fee == 3.5
+
+
+def test_update_zone_ui_all_fields_persisted(client, app, db):
+    """Updating a zone via UI persists neighborhoods, distance bands, fee, min order."""
+    _admin_client(client, app, "adm_f02_update")
+
+    with app.app_context():
+        zone = CoverageZone(
+            name="UpdateUIZone",
+            zip_codes_json=["44001"],
+            neighborhoods_json=["OldNeighborhood"],
+            distance_band_min=0.0,
+            distance_band_max=5.0,
+            min_order_amount=10.0,
+            delivery_fee=2.0,
+        )
+        db.session.add(zone)
+        db.session.commit()
+        zid = zone.id
+
+    path = f"/coverage/zones/{zid}"
+    resp = client.post(
+        path,
+        data=signed_data("POST", path, {
+            "name": "UpdateUIZone",
+            "description": "Updated",
+            "zip_codes": "44001, 44002",
+            "neighborhoods": "NewNeighborhood, AnotherArea",
+            "distance_band_min": "2.0",
+            "distance_band_max": "20.0",
+            "min_order_amount": "30.00",
+            "delivery_fee": "7.99",
+        }),
+        follow_redirects=True,
+    )
+    assert resp.status_code == 200
+
+    with app.app_context():
+        zone = db.session.get(CoverageZone, zid)
+        assert set(zone.zip_codes_json) == {"44001", "44002"}
+        assert set(zone.neighborhoods_json) == {"NewNeighborhood", "AnotherArea"}
+        assert zone.distance_band_min == 2.0
+        assert zone.distance_band_max == 20.0
+        assert zone.min_order_amount == 30.0
+        assert zone.delivery_fee == 7.99
+
+
+def test_zone_detail_page_shows_all_policy_fields(client, app, db):
+    """Zone detail page renders neighborhoods, distance bands, fee, and min order."""
+    _admin_client(client, app, "adm_f02_detail")
+
+    with app.app_context():
+        zone = CoverageZone(
+            name="DetailFieldZone",
+            zip_codes_json=["33001"],
+            neighborhoods_json=["Hillside"],
+            distance_band_min=0.5,
+            distance_band_max=8.0,
+            min_order_amount=15.0,
+            delivery_fee=4.25,
+        )
+        db.session.add(zone)
+        db.session.commit()
+        zid = zone.id
+
+    resp = client.get(f"/coverage/zones/{zid}")
+    assert resp.status_code == 200
+    body = resp.data.decode()
+    assert "Hillside" in body
+    assert "8.0" in body
+    assert "15.00" in body or "15.0" in body
+    assert "4.25" in body

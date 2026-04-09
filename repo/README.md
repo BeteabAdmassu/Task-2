@@ -26,7 +26,7 @@ In development and testing, random/default keys are generated automatically.
 # Install dependencies
 pip install -r requirements.txt
 
-# Run in development mode (auto-generates ephemeral keys — not for production)
+# Run in development mode (auto-generates ephemeral keys -- not for production)
 FLASK_ENV=development python run.py
 ```
 
@@ -71,7 +71,7 @@ certificate for internet-facing deployments).
 > Changing `SECRET_KEY` invalidates all active sessions; changing `ENCRYPTION_KEY` makes
 > previously encrypted patient data unreadable.
 
-### `docker-compose.yml` — E2E testing only
+### `docker-compose.yml` -- E2E testing only
 
 The included `docker-compose.yml` contains **hardcoded example keys** intended solely for the
 automated E2E test suite. **Do not use it for any real deployment.** Always supply your own
@@ -103,7 +103,7 @@ It will:
 
 ## Token-at-Rest Protection
 
-All request/idempotency tokens are stored as **SHA-256 hex digests** — the raw client-supplied value is never written to the database or application logs.
+All request/idempotency tokens are stored as **SHA-256 hex digests** -- the raw client-supplied value is never written to the database or application logs.
 
 | Column | Model | Storage |
 |---|---|---|
@@ -118,8 +118,8 @@ Idempotency lookups hash the incoming token before querying, so duplicate-detect
 
 Reservation holds (10-minute window) are expired by **two complementary mechanisms**:
 
-1. **Scheduled job** (`hold_expiry`, every 1 min) — runs inside the APScheduler background thread started by `create_app()`. Holds are expired on a fixed cadence regardless of user traffic. This is the authoritative mechanism. With a 10-minute hold window and a 1-minute sweep, a hold can remain active for at most ~11 minutes — one sweep interval beyond its nominal expiry.
-2. **Lazy cleanup** (`schedule_bp.before_request`) — `expire_stale_holds()` is also called on every request to the schedule blueprint. This provides immediate cleanup for active users but is not relied upon alone.
+1. **Scheduled job** (`hold_expiry`, every 1 min) -- runs inside the APScheduler background thread started by `create_app()`. Holds are expired on a fixed cadence regardless of user traffic. This is the authoritative mechanism. With a 10-minute hold window and a 1-minute sweep, a hold can remain active for at most ~11 minutes -- one sweep interval beyond its nominal expiry.
+2. **Lazy cleanup** (`schedule_bp.before_request`) -- `expire_stale_holds()` is also called on every request to the schedule blueprint. This provides immediate cleanup for active users but is not relied upon alone.
 
 The scheduler is skipped in `testing` mode. Tests that need to verify time-driven expiry call `expire_stale_holds()` directly to simulate a scheduler firing.
 
@@ -151,29 +151,29 @@ When a patient submits `POST /patient/delete-account` with a correct password an
 
 ### What is retained for legal/audit reasons
 
-- **`audit_logs`** — never modified; all audit entries are preserved indefinitely
-- **`assessment_results`** — record and scores retained; `patient_id` FK points to the now-deactivated anonymized user row
-- **`visits`** — appointment records retained; `patient_id` FK preserved for operational/audit queries
-- **`reservations`** — booking records retained; `patient_id` FK preserved
-- **`demographics_change_log`** — log entries retained (with PII values scrubbed); timestamps and field names preserved
+- **`audit_logs`** -- never modified; all audit entries are preserved indefinitely
+- **`assessment_results`** -- record and scores retained; `patient_id` FK points to the now-deactivated anonymized user row
+- **`visits`** -- appointment records retained; `patient_id` FK preserved for operational/audit queries
+- **`reservations`** -- booking records retained; `patient_id` FK preserved
+- **`demographics_change_log`** -- log entries retained (with PII values scrubbed); timestamps and field names preserved
 
 ### Limits and boundaries
 
 - The deleted account cannot be reactivated or logged into (enforced by `is_active=False` and username replacement)
-- Clinical note records authored by clinicians are not deleted — only the encrypted content is replaced with a placeholder. Record structure is preserved for the clinician's practice audit trail.
+- Clinical note records authored by clinicians are not deleted -- only the encrypted content is replaced with a placeholder. Record structure is preserved for the clinician's practice audit trail.
 - Staff-authored clinical note content is fully replaced; the note's link to the visit and the authoring clinician is kept.
-- No schema migrations are required — the anonymization operates entirely at the data level within existing columns.
+- No schema migrations are required -- the anonymization operates entirely at the data level within existing columns.
 
 ## Security & Audit Features
 
 ### Encrypted Clinical Notes
-Clinical notes are stored encrypted at rest using Fernet symmetric encryption (same key as all other field-level encryption). The `ClinicalNote` model exposes a `content` property that decrypts on access — the raw `content_encrypted` column is never exposed in responses or logs. Access control: patients may read their own notes via `GET /notes/my`; clinicians, front-desk staff, and administrators create and read notes via `GET/POST /notes/patient/<id>`.
+Clinical notes are stored encrypted at rest using Fernet symmetric encryption (same key as all other field-level encryption). The `ClinicalNote` model exposes a `content` property that decrypts on access -- the raw `content_encrypted` column is never exposed in responses or logs. Access control: patients may read their own notes via `GET /notes/my`; clinicians, front-desk staff, and administrators create and read notes via `GET/POST /notes/patient/<id>`.
 
-### Admin Mutations — Reason Capture & Audit Trail
+### Admin Mutations -- Reason Capture & Audit Trail
 Both `change_role` and `change_status` in the admin panel require a non-empty `reason` field. On success, an `AuditLog` entry is written including: actor user ID, action (`change_role` / `change_status`), target user ID, before/after values, and the provided reason. Requests without a reason are rejected with HTTP 400.
 
 ### Assessment visit_id Validation
-When a patient submits a health assessment with a `visit_id`, the route verifies the visit exists in the database and — for patient-role users — that `visit.patient_id` matches the submitting user. Invalid or unauthorized `visit_id` values return a validation error without creating an `AssessmentResult`.
+When a patient submits a health assessment with a `visit_id`, the route verifies the visit exists in the database and -- for patient-role users -- that `visit.patient_id` matches the submitting user. Invalid or unauthorized `visit_id` values return a validation error without creating an `AssessmentResult`.
 
 ## Project Structure
 
@@ -194,7 +194,7 @@ repo/
 │   └── e2e/                 # Playwright E2E tests
 ├── run_tests.sh             # Single script to run ALL tests
 ├── Dockerfile               # Production container image
-├── docker-compose.yml       # Docker Compose config (E2E test keys — not for production)
+├── docker-compose.yml       # Docker Compose config (E2E test keys -- not for production)
 ├── requirements.txt         # Production dependencies
 ├── requirements-test.txt    # Test dependencies
 └── run.py                   # Entry point
