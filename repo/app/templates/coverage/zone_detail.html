@@ -128,4 +128,19 @@
     </div>
     <button type="submit" class="btn btn-primary">Assign</button>
 </form>
+
+{% if zone.is_active %}
+<h2>Deactivate Zone</h2>
+{% set _deactivate_action = url_for('coverage.deactivate_zone', zone_id=zone.id) %}
+<form method="POST" action="{{ _deactivate_action }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    {{ antireplay_inputs("POST", _deactivate_action) }}
+    <div class="form-group">
+        <label for="deactivate_reason">Reason (required)</label>
+        <input type="text" id="deactivate_reason" name="reason" class="form-control"
+               placeholder="e.g. Zone merged with Downtown, service discontinued" required>
+    </div>
+    <button type="submit" class="btn btn-danger">Deactivate Zone</button>
+</form>
+{% endif %}
 {% endblock %}

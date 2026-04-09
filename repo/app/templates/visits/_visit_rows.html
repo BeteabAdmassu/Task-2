@@ -10,13 +10,19 @@
         {% if allowed and current_user.role in ('administrator', 'clinician', 'front_desk') %}
         {% for target in allowed %}
         {% set _action = url_for('visits.transition', visit_id=visit.id) %}
-        <form method="POST" action="{{ _action }}" style="display:inline;"
+        {% set _is_terminal = target in ('canceled', 'no_show') %}
+        <form method="POST" action="{{ _action }}"
+              style="display:inline-block; vertical-align:top; margin-bottom:0.25rem;"
               hx-post="{{ _action }}" hx-target="#visit-rows" hx-swap="innerHTML">
             <input type="hidden" name="target_state" value="{{ target }}">
             <input type="hidden" name="request_token" value="{{ generate_request_token() }}">
             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
             {{ antireplay_inputs("POST", _action) }}
-            <button type="submit" class="btn btn-sm btn-{{ 'danger' if target in ('canceled', 'no_show') else 'primary' }}">
+            {% if _is_terminal %}
+            <input type="text" name="reason" placeholder="Reason (required)" required
+                   class="form-control form-control-sm" style="width:140px; display:inline-block;">
+            {% endif %}
+            <button type="submit" class="btn btn-sm btn-{{ 'danger' if _is_terminal else 'primary' }}">
                 {{ target | replace('_', ' ') | title }}
             </button>
         </form>

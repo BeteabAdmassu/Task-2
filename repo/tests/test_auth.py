@@ -255,6 +255,34 @@ def test_login_attempt_recording(client, app):
         assert attempts[0].success is False
 
 
+def test_ip_rate_limit_not_bypassed_by_xforwardedfor(client, app):
+    """Spoofed X-Forwarded-For must not bypass per-IP rate limiting."""
+    with app.app_context():
+        from app.models.user import User
+        from app.extensions import db
+
+        user = User(username="spoof_target")
+        user.set_password("Password1")
+        db.session.add(user)
+        db.session.commit()
+
+        # Exhaust the rate limit from the real remote_addr (127.0.0.1 in test client)
+        for _ in range(10):
+            client.post(
+                "/auth/login",
+                data=login_data("spoof_target", "WrongPass1"),
+            )
+
+        # Attacker tries to reset the IP counter by spoofing X-Forwarded-For
+        resp = client.post(
+            "/auth/login",
+            data=login_data("spoof_target", "Password1"),
+            headers={"X-Forwarded-For": "10.0.0.99"},
+        )
+        # Must still be locked out — spoof must have no effect
+        assert b"Too many login attempts" in resp.data
+
+
 def test_login_form_has_antireplay_fields(client, app):
     """Login form HTML must include the three anti-replay hidden inputs."""
     with app.app_context():

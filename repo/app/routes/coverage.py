@@ -236,10 +236,15 @@ def deactivate_zone(zone_id):
         flash("Zone not found.", "danger")
         return redirect(url_for("coverage.zones"))
 
+    reason = request.form.get("reason", "").strip()
+    if not reason:
+        flash("A reason is required to deactivate a zone.", "danger")
+        return redirect(url_for("coverage.zone_detail", zone_id=zone_id))
+
     zone.is_active = False
     db.session.commit()
 
-    log_action("deactivate_zone", "coverage_zone", zone.id, {"name": zone.name})
+    log_action("deactivate_zone", "coverage_zone", zone.id, {"name": zone.name, "reason": reason})
     flash(f"Zone '{zone.name}' deactivated.", "info")
     return redirect(url_for("coverage.zones"))
 

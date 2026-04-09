@@ -461,3 +461,44 @@ def test_hold_expiry_leaves_active_holds(app):
     with app.app_context():
         res = db.session.get(Reservation, res_id)
         assert res.status == "held", "Active hold must not be prematurely expired"
+
+
+def test_same_slot_capacity_one_only_one_hold_succeeds(app):
+    """Slot with capacity=1 must reject a second hold once the first is active."""
+    _, _, sid = _create_clinician_with_slot(app, username="doc_cap1")
+    pid1 = _create_user(app, "pat_cap1a")
+    pid2 = _create_user(app, "pat_cap1b")
+
+    client1 = app.test_client()
+    client2 = app.test_client()
+
+    _login(client1, "pat_cap1a")
+    _login(client2, "pat_cap1b")
+
+    path = f"/schedule/hold/{sid}"
+
+    # Patient 1 holds the slot — must succeed
+    resp1 = client1.post(path, data=signed_data("POST", path), follow_redirects=True)
+    assert resp1.status_code == 200
+
+    with app.app_context():
+        r1 = Reservation.query.filter_by(slot_id=sid, patient_id=pid1).first()
+        assert r1 is not None
+        assert r1.status == "held"
+
+    # Patient 2 attempts to hold the same slot — must be rejected
+    resp2 = client2.post(path, data=signed_data("POST", path), follow_redirects=True)
+    assert resp2.status_code == 200
+    assert b"no longer available" in resp2.data.lower()
+
+    with app.app_context():
+        r2 = Reservation.query.filter_by(slot_id=sid, patient_id=pid2).first()
+        assert r2 is None, "Second patient must not have a reservation on a capacity=1 held slot"
+
+    # Total active holds for this slot must be exactly 1
+    with app.app_context():
+        active_count = Reservation.query.filter(
+            Reservation.slot_id == sid,
+            Reservation.status.in_(["held", "confirmed"]),
+        ).count()
+        assert active_count == 1

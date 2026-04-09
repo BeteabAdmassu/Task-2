@@ -232,3 +232,90 @@ def test_unauthenticated_after_logout_redirected(client, app):
     resp = client.get("/assessments/history", follow_redirects=False)
     assert resp.status_code == 302
     assert "login" in resp.headers.get("Location", "").lower()
+
+
+# ---------------------------------------------------------------------------
+# Schedule cancel — object-level ownership
+# ---------------------------------------------------------------------------
+
+def test_patient_cannot_cancel_another_patients_reservation(app):
+    """Patient B must not be able to cancel Patient A's reservation."""
+
+    _create_user(app, "iso_cancel_owner")
+    _create_user(app, "iso_cancel_attacker")
+
+    with app.app_context():
+        owner = User.query.filter_by(username="iso_cancel_owner").first()
+        attacker = User.query.filter_by(username="iso_cancel_attacker").first()
+
+        doc_user = User(username="iso_cancel_doc", role="clinician")
+        doc_user.set_password("Password1")
+        db.session.add(doc_user)
+        db.session.commit()
+        clinician = Clinician(user_id=doc_user.id)
+        db.session.add(clinician)
+        db.session.commit()
+
+        slot = Slot(
+            clinician_id=clinician.id,
+            date=date.today() + timedelta(days=2),
+            start_time=time(10, 0),
+            end_time=time(10, 15),
+            capacity=1,
+        )
+        db.session.add(slot)
+        db.session.commit()
+
+        reservation = Reservation(
+            slot_id=slot.id,
+            patient_id=owner.id,
+            status="held",
+            held_at=datetime.now(timezone.utc),
+            expires_at=datetime.now(timezone.utc) + timedelta(minutes=10),
+        )
+        db.session.add(reservation)
+        db.session.commit()
+        res_id = reservation.id
+
+    attacker_client = app.test_client()
+    _login(attacker_client, "iso_cancel_attacker")
+
+    path = f"/schedule/cancel/{res_id}"
+    resp = attacker_client.post(
+        path,
+        data=signed_data("POST", path),
+        follow_redirects=True,
+    )
+    assert resp.status_code == 200
+    assert b"Access denied" in resp.data
+
+    with app.app_context():
+        res = db.session.get(Reservation, res_id)
+        assert res.status == "held", "Reservation must not be canceled by a different patient"
+
+
+# ---------------------------------------------------------------------------
+# Notes — object-level role and ownership enforcement
+# ---------------------------------------------------------------------------
+
+def test_patient_cannot_access_staff_notes_route(app):
+    """A patient must be denied access to the staff notes endpoint."""
+    pid = _create_user(app, "iso_notes_patient_a")
+
+    patient_client = app.test_client()
+    _login(patient_client, "iso_notes_patient_a")
+
+    resp = patient_client.get(f"/notes/patient/{pid}", follow_redirects=False)
+    assert resp.status_code == 403
+
+
+def test_patient_cannot_read_another_patients_notes_via_staff_route(app):
+    """Even with a valid patient_id, a patient role must be refused staff notes."""
+    pid_a = _create_user(app, "iso_notes_victim")
+    _create_user(app, "iso_notes_nosy")
+
+    nosy_client = app.test_client()
+    _login(nosy_client, "iso_notes_nosy")
+
+    resp = nosy_client.get(f"/notes/patient/{pid_a}", follow_redirects=False)
+    assert resp.status_code == 403

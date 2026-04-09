@@ -54,6 +54,13 @@ def transition(visit_id):
     reason = request.form.get("reason", "").strip() or None
     request_token = request.form.get("request_token", "").strip()
 
+    if target_state in ("canceled", "no_show") and not reason:
+        msg = "A reason is required when canceling or marking a visit as no-show."
+        if request.headers.get("HX-Request"):
+            return f"<tr><td colspan='6'>{msg}</td></tr>", 422
+        flash(msg, "danger")
+        return redirect(url_for("visits.dashboard"))
+
     if not request_token:
         if request.headers.get("HX-Request"):
             return "<tr><td colspan='6'>Missing request token — please reload the page.</td></tr>", 422

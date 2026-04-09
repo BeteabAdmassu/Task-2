@@ -47,35 +47,7 @@ def observability():
 @observability_bp.route("/operations")
 @role_required("administrator")
 def operations():
-    # Run anomaly detection lazily
-    try:
-        anomaly_detection()
-    except Exception:
-        pass
-
-    # Database stats - row counts for key tables
-    table_stats = {}
-    tables = ["users", "visits", "visit_transitions", "audit_logs", "coverage_zones",
-              "reminders", "slots", "reservations", "clinicians"]
-    for table in tables:
-        try:
-            result = db.session.execute(db.text(f"SELECT COUNT(*) FROM {table}"))
-            table_stats[table] = result.scalar()
-        except Exception:
-            table_stats[table] = "N/A"
-
-    # Recent anomaly alerts
-    alerts = AnomalyAlert.query.order_by(AnomalyAlert.created_at.desc()).limit(20).all()
-
-    # Recent slow queries
-    slow_queries = SlowQuery.query.order_by(SlowQuery.timestamp.desc()).limit(20).all()
-
-    return render_template(
-        "admin/observability.html",
-        table_stats=table_stats,
-        alerts=alerts,
-        slow_queries=slow_queries,
-    )
+    return redirect(url_for("observability.observability"))
 
 
 @observability_bp.route("/operations/alerts")
@@ -112,4 +84,4 @@ def acknowledge_alert(alert_id):
     alert.acknowledged_by = current_user.id
     db.session.commit()
     flash("Alert acknowledged.", "success")
-    return redirect(url_for("observability.operations"))
+    return redirect(url_for("observability.observability"))

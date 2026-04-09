@@ -20,7 +20,7 @@ PASSWORD_RE = re.compile(r"^(?=.*[a-z])(?=.*[A-Z])(?=.*\d).{8,}$")
 
 
 def _get_client_ip():
-    return request.headers.get("X-Forwarded-For", request.remote_addr) or "unknown"
+    return request.remote_addr or "unknown"
 
 
 def _check_rate_limit(username=None, ip_address=None):

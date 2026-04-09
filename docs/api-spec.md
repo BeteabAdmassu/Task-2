@@ -34,9 +34,9 @@ All endpoints are REST-style, consumed by HTMX partial updates. Responses return
 
 | Method | Path | Description | Auth | Request | Response |
 |--------|------|-------------|------|---------|----------|
-| GET | `/admin/users` | List all users | Admin | `?page=`, `?search=` | HTML table with pagination |
-| PUT | `/admin/users/<id>/role` | Change user role | Admin | `role` (Administrator/Clinician/Front Desk/Patient) | HTML partial (updated row) |
-| PUT | `/admin/users/<id>/status` | Activate/deactivate user | Admin | `is_active` (bool) | HTML partial (updated row) |
+| GET | `/admin/users` | List all users | Admin | — | HTML table |
+| PUT | `/admin/users/<id>/role` | Change user role | Admin | `role`, `reason` (required), anti-replay fields | HTML partial (updated row) |
+| PUT | `/admin/users/<id>/status` | Activate/deactivate user | Admin | `is_active` (true/1/yes/on), `reason` (required), anti-replay fields | HTML partial (updated row) |
 
 ### Constraints
 - Cannot demote the last Administrator
@@ -50,9 +50,10 @@ All endpoints are REST-style, consumed by HTMX partial updates. Responses return
 |--------|------|-------------|------|---------|----------|
 | GET | `/patient/demographics` | View own demographics | Patient | — | HTML form (pre-filled or empty) |
 | POST | `/patient/demographics` | Create/update own demographics | Patient | `full_name`, `date_of_birth`, `gender`, `phone`, `address_*`, `emergency_contact_*`, `insurance_id`, `government_id` | HTML partial (success banner) |
-| POST | `/patient/demographics/reveal` | Reveal masked sensitive field | Patient | `field` (insurance_id/government_id) | HTML partial (unmasked value) |
+| POST | `/patient/demographics/reveal` | Reveal masked sensitive field | Patient | `field` (insurance_id/government_id), anti-replay fields | Plain text unmasked value |
 | GET | `/staff/patients/<id>/demographics` | View patient demographics | Front Desk, Clinician | — | HTML form (editable for Front Desk, read-only for Clinician) |
-| POST | `/staff/patients/<id>/demographics` | Edit patient demographics | Front Desk | Same fields as patient update | HTML partial (success banner) |
+| POST | `/staff/patients/<id>/demographics` | Edit patient demographics | Front Desk | Same fields as patient update, anti-replay fields | Redirect to patient demographics |
+| POST | `/staff/patients/<id>/demographics/reveal` | Reveal masked field for a patient | Admin, Front Desk | `field` (insurance_id/government_id), anti-replay fields | Plain text unmasked value |
 
 ### Field Validation
 - `full_name`: required, 1-200 chars
@@ -94,10 +95,10 @@ All endpoints are REST-style, consumed by HTMX partial updates. Responses return
 | Method | Path | Description | Auth | Request | Response |
 |--------|------|-------------|------|---------|----------|
 | GET | `/schedule/available` | Search available slots | Authenticated | `?date_from=`, `?date_to=`, `?clinician_id=` | HTML slot list |
-| POST | `/schedule/hold/<slot_id>` | Create 10-min reservation hold | Patient | `request_token` | Redirect to confirm page |
+| POST | `/schedule/hold/<slot_id>` | Create 10-min reservation hold | Patient | `request_token`, anti-replay fields | Redirect to confirm page |
 | GET | `/schedule/confirm/<reservation_id>` | Confirm page with countdown | Patient | — | HTML confirm page |
-| POST | `/schedule/confirm/<reservation_id>` | Confirm booking | Patient | — | Redirect to my appointments |
-| POST | `/schedule/cancel/<reservation_id>` | Cancel hold or booking | Patient | — | Redirect to my appointments |
+| POST | `/schedule/confirm/<reservation_id>` | Confirm booking | Patient | anti-replay fields | Redirect to my appointments |
+| POST | `/schedule/cancel/<reservation_id>` | Cancel hold or booking | Patient | anti-replay fields | Redirect to my appointments |
 | POST | `/schedule/behalf/<patient_id>/hold/<slot_id>` | Staff hold on behalf | Admin, Front Desk | `request_token` | Redirect to behalf confirm page |
 | GET | `/schedule/behalf/<patient_id>/confirm/<reservation_id>` | Staff confirm page | Admin, Front Desk | — | HTML confirm page |
 | POST | `/schedule/behalf/<patient_id>/confirm/<reservation_id>` | Staff confirm booking | Admin, Front Desk | — | Redirect to staff calendar |
@@ -120,7 +121,7 @@ All endpoints are REST-style, consumed by HTMX partial updates. Responses return
 |--------|------|-------------|------|---------|----------|
 | GET | `/visits/dashboard` | Shared visit dashboard (today's visits) | Front Desk, Clinician, Admin | — | HTML dashboard table |
 | GET | `/visits/dashboard/poll` | HTMX polling for dashboard updates | Front Desk, Clinician, Admin | — | HTML partial (updated rows) |
-| POST | `/visits/<id>/transition` | Advance visit state | Front Desk, Clinician, Admin | `target_state`, `reason` (optional), `request_token` | HTML partial (updated row) |
+| POST | `/visits/<id>/transition` | Advance visit state | Front Desk, Clinician, Admin | `target_state`, `reason` (required for canceled/no_show), `request_token`, anti-replay fields | HTML partial (updated row) |
 | GET | `/visits/<id>/timeline` | Milestone timeline for a visit | Authenticated (staff or own) | — | HTML partial (transition history) |
 
 ### State Machine Transitions
@@ -130,7 +131,8 @@ Booked → Checked In → Seen
 Booked → Canceled
 Pending Payment → Canceled
 Checked In → No-Show
-Any active → Canceled (admin override, reason required)
+Any active → Canceled (reason required)
+Any checked_in → No-Show (reason required)
 ```
 
 ### Idempotency
@@ -148,7 +150,7 @@ Any active → Canceled (admin override, reason required)
 | POST | `/coverage/zones` | Create zone | Admin | `name`, `description`, `zip_codes`, `neighborhoods`, `distance_band_min`, `distance_band_max`, `min_order_amount`, `delivery_fee` | Redirect to zone list |
 | GET | `/coverage/zones/<id>` | Zone detail | Admin | — | HTML detail page |
 | POST | `/coverage/zones/<id>` | Update zone | Admin | Same fields as create | Redirect to zone detail |
-| POST | `/coverage/zones/<id>/deactivate` | Soft-deactivate zone | Admin | — | Redirect to zone list |
+| POST | `/coverage/zones/<id>/deactivate` | Soft-deactivate zone | Admin | `reason` (required), anti-replay fields | Redirect to zone list |
 | POST | `/coverage/zones/<id>/assign` | Assign clinician to zone | Admin | `clinician_id`, `assignment_type` | Redirect to zone detail |
 | POST | `/coverage/zones/<id>/windows` | Add delivery window | Admin | `day_of_week`, `start_time`, `end_time` | Redirect to zone detail |
 | POST | `/coverage/zones/<id>/windows/<wid>/update` | Update delivery window | Admin | `day_of_week`, `start_time`, `end_time` | Redirect to zone detail |
@@ -183,9 +185,7 @@ Any active → Canceled (admin override, reason required)
 
 | Method | Path | Description | Auth | Request | Response |
 |--------|------|-------------|------|---------|----------|
-| GET | `/admin/audit` | Audit log viewer | Admin | `?event_type=`, `?actor_id=`, `?target_type=`, `?target_id=`, `?date_from=`, `?date_to=`, `?page=` | HTML table with pagination |
-| GET | `/admin/audit/export` | Export audit data | Admin | `?format=csv|json`, `?date_from=`, `?date_to=` | File download (CSV or JSON) |
-| GET | `/admin/audit/entity/<type>/<id>` | Timeline for specific entity | Admin | — | HTML partial (event timeline) |
+| GET | `/admin/audit` | Audit log viewer with pagination | Admin | `?page=` | HTML table with pagination |
 
 ---
 
@@ -208,9 +208,9 @@ Any active → Canceled (admin override, reason required)
 | Method | Path | Description | Auth | Request | Response |
 |--------|------|-------------|------|---------|----------|
 | GET | `/admin/observability` | Observability dashboard (stats, alerts, slow queries) | Admin | — | HTML dashboard |
-| GET | `/admin/operations` | Operations dashboard | Admin | — | HTML dashboard |
+| GET | `/admin/operations` | Redirect to observability dashboard | Admin | — | 302 → `/admin/observability` |
 | GET | `/admin/operations/alerts` | HTMX partial for alerts | Admin | — | HTML partial (alert list) |
-| POST | `/admin/operations/alerts/<id>/acknowledge` | Acknowledge alert | Admin | signed nonce/timestamp | Redirect to operations |
+| POST | `/admin/operations/alerts/<id>/acknowledge` | Acknowledge alert | Admin | anti-replay fields | Redirect to observability dashboard |
 | GET | `/admin/operations/slow-queries` | HTMX partial for slow queries | Admin | — | HTML partial (query table) |
 | GET | `/admin/operations/sessions` | Active sessions | Admin | — | HTML partial (session table) |
 
@@ -223,9 +223,12 @@ Any active → Canceled (admin override, reason required)
 |--------|---------|----------|
 | `X-CSRFToken` | CSRF protection (HTMX requests) | All POST/PUT/DELETE |
 | `X-Request-Token` | Idempotency token | State-changing operations |
-| `X-Signed-Timestamp` | Anti-replay signed timestamp | Sensitive actions (login, transitions, deletion) |
-| `X-Signed-Nonce` | Anti-replay nonce | Sensitive actions |
+| `X-Timestamp` | Anti-replay ISO-8601 UTC timestamp | Sensitive actions (login, transitions, deletion) |
+| `X-Nonce` | Anti-replay UUID nonce | Sensitive actions |
+| `X-Signature` | HMAC-SHA256 over `METHOD\|path\|nonce\|timestamp` | Sensitive actions |
 | `HX-Request` | HTMX request indicator (auto-set by HTMX) | HTMX calls |
+
+> **Note**: Anti-replay fields can also be submitted as hidden form fields `_timestamp`, `_nonce`, and `_signature` (used by server-rendered HTMX forms via the `antireplay_inputs()` helper).
 
 ### Response Headers
 | Header | Purpose |

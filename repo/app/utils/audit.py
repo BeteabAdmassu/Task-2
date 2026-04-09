@@ -18,7 +18,7 @@ def log_action(action, resource_type, resource_id=None, details=None):
     if has_request_context():
         if current_user and hasattr(current_user, "id") and current_user.is_authenticated:
             user_id = current_user.id
-        ip_address = request.headers.get("X-Forwarded-For", request.remote_addr) or "unknown"
+        ip_address = request.remote_addr or "unknown"
         user_agent = (request.headers.get("User-Agent", "") or "")[:500]
 
     entry = AuditLog(
