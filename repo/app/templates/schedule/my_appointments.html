@@ -4,7 +4,12 @@
 <div class="card">
     <div class="card-header">
         <h2>My Appointments</h2>
-        <a href="{{ url_for('schedule.available') }}" class="btn btn-primary">Book New</a>
+        <a href="{{ url_for('schedule.available') }}"
+           hx-get="{{ url_for('schedule.available') }}"
+           hx-target="#main-content"
+           hx-select="#main-content"
+           hx-push-url="true"
+           class="btn btn-primary">Book New</a>
     </div>
     {% if reservations %}
     <div class="table-responsive">

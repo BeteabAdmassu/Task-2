@@ -25,12 +25,27 @@
             <td>{{ r.due_date.strftime('%Y-%m-%d') if r.due_date else '' }}</td>
             <td>
                 {% if r.type == 'reassessment' %}
-                <a href="{{ url_for('assessments.start') }}" class="btn btn-sm btn-primary">Start Assessment</a>
+                <a href="{{ url_for('assessments.start') }}"
+                   hx-get="{{ url_for('assessments.start') }}"
+                   hx-target="#main-content"
+                   hx-select="#main-content"
+                   hx-push-url="true"
+                   class="btn btn-sm btn-primary">Start Assessment</a>
                 {% elif r.type == 'appointment' and r.related_entity_id %}
-                <a href="{{ url_for('schedule.my_appointments') }}" class="btn btn-sm btn-primary">View Appointment</a>
+                <a href="{{ url_for('schedule.my_appointments') }}"
+                   hx-get="{{ url_for('schedule.my_appointments') }}"
+                   hx-target="#main-content"
+                   hx-select="#main-content"
+                   hx-push-url="true"
+                   class="btn btn-sm btn-primary">View Appointment</a>
                 {% endif %}
                 {% set _dismiss_action = url_for('reminders.dismiss', reminder_id=r.id) %}
-                <form method="POST" action="{{ _dismiss_action }}" style="display:inline;">
+                <form method="POST" action="{{ _dismiss_action }}" style="display:inline;"
+                      hx-post="{{ _dismiss_action }}"
+                      hx-target="#main-content"
+                      hx-swap="innerHTML"
+                      hx-select="#main-content"
+                      hx-push-url="true">
                     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                     {{ antireplay_inputs("POST", _dismiss_action) }}
                     <button type="submit" class="btn btn-sm btn-secondary">Dismiss</button>

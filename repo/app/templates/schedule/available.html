@@ -4,7 +4,12 @@
 <div class="card">
     <div class="card-header"><h2>Available Appointments</h2></div>
 
-    <form method="GET" style="display:flex; gap:1rem; flex-wrap:wrap; margin-bottom:1rem;">
+    <form method="GET"
+          hx-get="{{ url_for('schedule.available') }}"
+          hx-target="#main-content"
+          hx-select="#main-content"
+          hx-push-url="true"
+          style="display:flex; gap:1rem; flex-wrap:wrap; margin-bottom:1rem;">
         <div class="form-group">
             <label for="date_from">From</label>
             <input type="date" id="date_from" name="date_from" class="form-control" value="{{ date_from }}">
@@ -37,7 +42,12 @@
                 <td>{{ s.clinician.user.username }}</td>
                 <td>
                     {% set _hold_action = url_for('schedule.hold', slot_id=s.id) %}
-                    <form method="POST" action="{{ _hold_action }}" style="display:inline;">
+                    <form method="POST" action="{{ _hold_action }}" style="display:inline;"
+                          hx-post="{{ _hold_action }}"
+                          hx-target="#main-content"
+                          hx-swap="innerHTML"
+                          hx-select="#main-content"
+                          hx-push-url="true">
                         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                         {{ antireplay_inputs("POST", _hold_action) }}
                         <input type="hidden" name="request_token" value="{{ slot_tokens[s.id] }}">

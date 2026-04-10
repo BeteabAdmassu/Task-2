@@ -6,7 +6,12 @@
 <div class="card">
     <div class="card-header">
         <h2>My Assessment History</h2>
-        <a href="{{ url_for('assessments.start') }}" class="btn btn-primary">New Assessment</a>
+        <a href="{{ url_for('assessments.start') }}"
+           hx-get="{{ url_for('assessments.start') }}"
+           hx-target="#main-content"
+           hx-select="#main-content"
+           hx-push-url="true"
+           class="btn btn-primary">New Assessment</a>
     </div>
 
     {% if results %}

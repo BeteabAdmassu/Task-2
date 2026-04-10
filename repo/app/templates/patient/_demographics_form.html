@@ -6,7 +6,10 @@
 
 {% set d = data if data is defined and data else {} %}
 {% set _demo_action = url_for('patient.demographics') %}
-<form method="POST" action="{{ _demo_action }}">
+<form method="POST" action="{{ _demo_action }}"
+      hx-post="{{ _demo_action }}"
+      hx-target="#demographics-form-container"
+      hx-swap="innerHTML">
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     {{ antireplay_inputs("POST", _demo_action) }}
     {% if demo %}<input type="hidden" name="version" value="{{ demo.version }}">{% endif %}

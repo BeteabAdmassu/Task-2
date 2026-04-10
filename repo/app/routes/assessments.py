@@ -1,6 +1,6 @@
 import json
 import uuid
-from flask import Blueprint, render_template, request, redirect, url_for, flash, jsonify
+from flask import Blueprint, render_template, request, redirect, url_for, flash, jsonify, make_response
 from flask_login import login_required, current_user
 from app.extensions import db
 from app.models.assessment import AssessmentTemplate, AssessmentResult, AssessmentDraft
@@ -131,22 +131,30 @@ def submit():
     visit_id = request.form.get("visit_id", type=int)
     request_token = request.form.get("request_token", "")
 
+    def _htmx_redirect(url):
+        """Return an HX-Redirect response for HTMX callers, plain redirect otherwise."""
+        if request.headers.get("HX-Request"):
+            r = make_response("", 200)
+            r.headers["HX-Redirect"] = url
+            return r
+        return redirect(url)
+
     # Validate visit_id if provided
     if visit_id is not None:
         visit = db.session.get(Visit, visit_id)
         if visit is None:
             flash("Invalid visit: not found.", "danger")
-            return redirect(url_for("assessments.start", visit_id=visit_id))
+            return _htmx_redirect(url_for("assessments.start", visit_id=visit_id))
         if visit.patient_id != current_user.id:
             flash("Invalid visit: access denied.", "danger")
-            return redirect(url_for("assessments.start"))
+            return _htmx_redirect(url_for("assessments.start"))
 
     # Idempotency check — compare against stored hash, not raw token.
     if request_token:
         token_hash = _hash_token(request_token)
         existing = AssessmentResult.query.filter_by(request_token=token_hash).first()
         if existing:
-            return redirect(url_for("assessments.result", assessment_id=existing.id))
+            return _htmx_redirect(url_for("assessments.result", assessment_id=existing.id))
 
     # Get answers from draft
     draft = AssessmentDraft.query.filter_by(
@@ -157,7 +165,7 @@ def submit():
 
     if not draft:
         flash("No assessment data found. Please start again.", "danger")
-        return redirect(url_for("assessments.start", visit_id=visit_id))
+        return _htmx_redirect(url_for("assessments.start", visit_id=visit_id))
 
     answers = json.loads(draft.partial_answers_json)
 
