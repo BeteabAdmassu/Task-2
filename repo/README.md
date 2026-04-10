@@ -7,6 +7,19 @@ A comprehensive clinic operations platform built with Flask, SQLite, and HTMX.
 - Python 3.10+ (local development and unit tests)
 - Docker (production deployment and E2E tests)
 
+### Python dependencies
+
+All dependencies are listed in `requirements.txt` and are **required** (none are optional):
+
+| Package | Purpose |
+|---|---|
+| `cryptography` | Fernet field-level encryption, self-signed TLS cert generation |
+| `APScheduler` | Background jobs: hold expiry (every 1 min), reminder generation (every 15 min) |
+| `Flask-WTF` | CSRF protection |
+| `bcrypt` | Password hashing |
+
+Install with `pip install -r requirements.txt`.
+
 ## Environment Variables (Production)
 
 The following environment variables **must** be set when running with `FLASK_ENV=production`:
@@ -76,6 +89,47 @@ certificate for internet-facing deployments).
 The included `docker-compose.yml` contains **hardcoded example keys** intended solely for the
 automated E2E test suite. **Do not use it for any real deployment.** Always supply your own
 secrets via environment variables as shown above.
+
+## Production Deployment Hardening
+
+For internet-facing deployments, place nginx in front of the Flask app to add real TLS
+termination and upstream rate limiting. A ready-to-use config is provided at
+`nginx/nginx.conf`.
+
+### What the nginx config provides
+
+| Feature | Detail |
+|---|---|
+| HTTP → HTTPS redirect | All port 80 traffic redirected to 443 |
+| TLS 1.2 / 1.3 only | Weak protocols and ciphers disabled |
+| Login rate limiting | 10 req/min per IP (matches in-app Flask limit), burst of 5 |
+| General rate limiting | 120 req/min per IP for all other routes, burst of 30 |
+| Security headers | `X-Content-Type-Options`, `X-Frame-Options`, `Referrer-Policy` |
+| Static asset caching | 7-day `Cache-Control` on `/static/` |
+
+### Quick setup
+
+```bash
+# Copy config and supply your TLS certificate
+cp nginx/nginx.conf /etc/nginx/conf.d/meridiancare.conf
+# Edit ssl_certificate / ssl_certificate_key paths, then:
+nginx -t && nginx -s reload
+```
+
+For the upstream address, update the `meridiancare_app` upstream block in
+`nginx/nginx.conf` to match your deployment (same-host `127.0.0.1:5000` or a
+Docker service name such as `web:5000`).
+
+### Secrets via `.env`
+
+Copy `.env.example` to `.env`, fill in the three required secrets, then source it:
+
+```bash
+cp .env.example .env
+# edit .env with your generated secrets
+set -a && source .env && set +a
+python run.py
+```
 
 ## Running Tests
 

@@ -25,7 +25,12 @@
                 <td>
                     {% if r.status in ('held', 'confirmed') %}
                     {% set _cancel_action = url_for('schedule.cancel', reservation_id=r.id) %}
-                    <form method="POST" action="{{ _cancel_action }}" style="display:inline;">
+                    <form method="POST" action="{{ _cancel_action }}" style="display:inline;"
+                          hx-post="{{ _cancel_action }}"
+                          hx-target="#main-content"
+                          hx-swap="innerHTML"
+                          hx-select="#main-content"
+                          hx-push-url="true">
                         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                         {{ antireplay_inputs("POST", _cancel_action) }}
                         <button type="submit" class="btn btn-danger" style="padding:0.25rem 0.5rem; font-size:0.85rem;">Cancel</button>

@@ -21,14 +21,7 @@ def _start_background_scheduler(app):
       the scheduler (avoids double-scheduling in the monitor/reloader process).
     - Registered with atexit for graceful shutdown.
     """
-    try:
-        from apscheduler.schedulers.background import BackgroundScheduler
-    except ImportError:
-        app.logger.warning(
-            "APScheduler is not installed — background jobs disabled. "
-            "Run: pip install APScheduler>=3.10,<4.0"
-        )
-        return None
+    from apscheduler.schedulers.background import BackgroundScheduler
     from app.utils.reminders import generate_pending_reminders
     from app.models.scheduling import expire_stale_holds
 

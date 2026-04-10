@@ -16,6 +16,11 @@
 
         {% set _confirm_action = url_for('schedule.confirm', reservation_id=reservation.id) %}
         <form method="POST" action="{{ _confirm_action }}" style="margin-top:1rem;"
+              hx-post="{{ _confirm_action }}"
+              hx-target="#main-content"
+              hx-swap="innerHTML"
+              hx-select="#main-content"
+              hx-push-url="true"
               onsubmit="(function(f){var b=f.querySelector('button[type=submit]');if(b.disabled)return false;b.disabled=true;b.textContent='Submitting...';})(this);">
             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
             {{ antireplay_inputs("POST", _confirm_action) }}
@@ -23,6 +28,11 @@
         </form>
         {% set _cancel_action = url_for('schedule.cancel', reservation_id=reservation.id) %}
         <form method="POST" action="{{ _cancel_action }}" style="margin-top:0.5rem;"
+              hx-post="{{ _cancel_action }}"
+              hx-target="#main-content"
+              hx-swap="innerHTML"
+              hx-select="#main-content"
+              hx-push-url="true"
               onsubmit="(function(f){var b=f.querySelector('button[type=submit]');if(b.disabled)return false;b.disabled=true;b.textContent='Cancelling...';})(this);">
             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
             {{ antireplay_inputs("POST", _cancel_action) }}
