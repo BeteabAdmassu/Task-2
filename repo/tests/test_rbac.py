@@ -217,7 +217,6 @@ def test_change_status_requires_reason(client, app):
 def test_change_role_creates_audit_record(client, app):
     """Successful role change creates an AuditLog with before/after/reason."""
     from app.models.audit import AuditLog
-    import json
 
     _create_user(app, "admin_al1", role="administrator")
     uid = _create_user(app, "user_al1", role="patient")
@@ -233,7 +232,7 @@ def test_change_role_creates_audit_record(client, app):
     with app.app_context():
         entry = AuditLog.query.filter_by(action="change_role").order_by(AuditLog.id.desc()).first()
         assert entry is not None
-        details = json.loads(entry.details_json)
+        details = entry.details_json
         assert details["before"] == "patient"
         assert details["after"] == "clinician"
         assert details["reason"] == "Credential verified"
@@ -242,7 +241,6 @@ def test_change_role_creates_audit_record(client, app):
 def test_change_status_creates_audit_record(client, app):
     """Successful status change creates an AuditLog with before/after/reason."""
     from app.models.audit import AuditLog
-    import json
 
     _create_user(app, "admin_al2", role="administrator")
     uid = _create_user(app, "user_al2", role="patient")
@@ -258,7 +256,7 @@ def test_change_status_creates_audit_record(client, app):
     with app.app_context():
         entry = AuditLog.query.filter_by(action="change_status").order_by(AuditLog.id.desc()).first()
         assert entry is not None
-        details = json.loads(entry.details_json)
+        details = entry.details_json
         assert details["before"] is True
         assert details["after"] is False
         assert details["reason"] == "Suspended pending review"

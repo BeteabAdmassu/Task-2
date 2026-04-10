@@ -1,6 +1,17 @@
 # API Specification
 
-All endpoints are REST-style, consumed by HTMX partial updates. Responses return HTML fragments for HTMX requests (`HX-Request` header present) and JSON for direct API calls. All state-changing endpoints require CSRF tokens and, for sensitive actions, signed request timestamps with anti-replay nonces.
+All endpoints are server-rendered and consumed primarily by HTMX partial updates. Response modes vary by endpoint - see the **Response** column in each table:
+
+- **HTML page** - full page render (navigation + content)
+- **HTML partial** - fragment returned for HTMX insertion (when `HX-Request` header is present)
+- **Redirect** - HTTP 302 to the next logical page (standard form POST/redirect/GET pattern)
+- **JSON** - structured JSON body (health checks, coverage check, data export)
+
+Most state-changing routes follow the Post/Redirect/Get pattern and return a **Redirect** on success with an HTML page after following the redirect. A subset of admin routes support inline HTMX updates and return an **HTML partial** when `HX-Request` is present.
+
+**HTMX-conditional responses:** Several routes return different content based on the `HX-Request` header. When `HX-Request` is absent (full page load), they return an **HTML page** or **Redirect**. When `HX-Request` is present (HTMX call), they return an **HTML partial**. Error responses from these routes also vary: non-HTMX requests get a flash message + redirect, HTMX requests get an inline error partial (or JSON for RBAC failures). The **Response** column in each table reflects the HTMX partial mode where applicable.
+
+All state-changing endpoints require CSRF tokens and, for sensitive actions, signed request timestamps with anti-replay nonces.
 
 ---
 
@@ -95,12 +106,12 @@ All endpoints are REST-style, consumed by HTMX partial updates. Responses return
 | Method | Path | Description | Auth | Request | Response |
 |--------|------|-------------|------|---------|----------|
 | GET | `/schedule/available` | Search available slots | Authenticated | `?date_from=`, `?date_to=`, `?clinician_id=` | HTML slot list |
-| POST | `/schedule/hold/<slot_id>` | Create 10-min reservation hold | Patient | anti-replay fields (required), `request_token` (optional) | Redirect to confirm page |
-| GET | `/schedule/confirm/<reservation_id>` | Confirm page with countdown | Patient | - | HTML confirm page |
+| POST | `/schedule/hold/<slot_id>` | Create 10-min reservation hold | Patient | anti-replay fields (required), `request_token` (**required** - generated per slot on the available-slots page) | Redirect to confirm page; replay of same token redirects to existing reservation without creating a duplicate; missing token returns Redirect (or HTMX 422) |
+| GET | `/schedule/confirm/<reservation_id>` | Confirm page with countdown | Patient | - | HTML page |
 | POST | `/schedule/confirm/<reservation_id>` | Confirm booking | Patient | anti-replay fields | Redirect to my appointments |
 | POST | `/schedule/cancel/<reservation_id>` | Cancel hold or booking | Patient | anti-replay fields | Redirect to my appointments |
-| POST | `/schedule/behalf/<patient_id>/hold/<slot_id>` | Staff hold on behalf | Admin, Front Desk | anti-replay fields (required), `request_token` (optional) | Redirect to behalf confirm page |
-| GET | `/schedule/behalf/<patient_id>/confirm/<reservation_id>` | Staff confirm page | Admin, Front Desk | - | HTML confirm page |
+| POST | `/schedule/behalf/<patient_id>/hold/<slot_id>` | Staff hold on behalf | Admin, Front Desk | anti-replay fields (required), `request_token` (**required**) | Redirect to behalf confirm page; same idempotency replay behaviour as patient hold |
+| GET | `/schedule/behalf/<patient_id>/confirm/<reservation_id>` | Staff confirm page | Admin, Front Desk | - | HTML page |
 | POST | `/schedule/behalf/<patient_id>/confirm/<reservation_id>` | Staff confirm booking | Admin, Front Desk | anti-replay fields (required) | Redirect to staff calendar |
 | GET | `/schedule/my-appointments` | Patient's appointments | Authenticated | - | HTML appointment list |
 | GET | `/schedule/staff/calendar` | Staff calendar view | Admin, Clinician, Front Desk | `?week=`, `?clinician_id=` | HTML calendar (week view) |
@@ -224,7 +235,7 @@ Any checked_in -> No-Show (reason required)
 | Header | Purpose | Required |
 |--------|---------|----------|
 | `X-CSRFToken` | CSRF protection (HTMX requests) | All POST/PUT/DELETE |
-| `X-Request-Token` | Idempotency token for endpoints that implement token-based dedupe | Optional / endpoint-specific |
+| `X-Request-Token` | Idempotency token for endpoints that implement token-based dedupe | Required on hold endpoints; optional elsewhere |
 | `X-Timestamp` | Anti-replay ISO-8601 UTC timestamp | Sensitive actions (login, transitions, deletion) |
 | `X-Nonce` | Anti-replay UUID nonce | Sensitive actions |
 | `X-Signature` | HMAC-SHA256 over `METHOD\|path\|nonce\|timestamp` | Sensitive actions |

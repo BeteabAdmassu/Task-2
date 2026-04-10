@@ -1,4 +1,3 @@
-import json
 from datetime import datetime, timezone, timedelta
 from flask import request, has_request_context
 from flask_login import current_user
@@ -10,7 +9,12 @@ _NEW_DEVICE_COOLDOWN = timedelta(hours=24)
 
 
 def log_action(action, resource_type, resource_id=None, details=None):
-    """Log an audit event capturing the current user and request context."""
+    """Log an audit event capturing the current user and request context.
+
+    ``details`` should be a plain dict; the JSON column serialises it automatically.
+    Passing a pre-serialised JSON string is deprecated and will be stored as a
+    nested string — always pass a dict.
+    """
     user_id = None
     ip_address = None
     user_agent = None
@@ -76,9 +80,7 @@ def check_new_device_alert(user_id, username, ip, ua):
                     alert_type="new_ip",
                     severity="warning",
                     message=f"New IP login: user={username}, ip={ip}",
-                    details_json=json.dumps({
-                        "user_id": user_id, "username": username, "ip": ip,
-                    }),
+                    details_json={"user_id": user_id, "username": username, "ip": ip},
                 ))
 
         # ── New device (user-agent) ──────────────────────────────────────────
@@ -94,9 +96,7 @@ def check_new_device_alert(user_id, username, ip, ua):
                     alert_type="new_device",
                     severity="info",
                     message=f"New device login: user={username}, ua={ua_short}",
-                    details_json=json.dumps({
-                        "user_id": user_id, "username": username, "user_agent": ua[:200],
-                    }),
+                    details_json={"user_id": user_id, "username": username, "user_agent": ua[:200]},
                 ))
 
         db.session.commit()

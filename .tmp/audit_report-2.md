@@ -1,231 +1,165 @@
 1. Verdict
-- Fail
+- Partial Pass
 
 2. Scope and Verification Boundary
-- Reviewed statically: `repo/README.md`, `docs/design.md`, `docs/api-spec.md`, Flask entry/config (`repo/run.py`, `repo/app/__init__.py`, `repo/app/config.py`), route modules, models, templates, and tests under `repo/tests/` and `repo/tests/e2e/`.
-- Excluded from evidence by rule: `./.tmp/**` (used only as report output destination).
-- Not executed: application runtime, browser runtime, pytest, Playwright, Docker, scheduler loops, network calls.
-- Cannot be statically confirmed: runtime UX behavior, real TLS deployment behavior, real concurrent behavior outside tested code paths, real LAN/browser rendering/accessibility.
-- Manual verification required for: production deployment behavior, full user journey polish, and operational performance under real clinic load.
+- Reviewed statically: `repo/README.md`, `docs/api-spec.md`, `docs/design.md`, Flask entry/config/blueprints/models/utils, Jinja templates, CSS, and tests under `repo/tests/`.
+- Excluded from evidence/search: `./.tmp/**` (except writing this report).
+- Not executed: project startup, browser runtime, tests, Docker/containers, scheduler runtime, migrations.
+- Cannot be statically confirmed: real TLS handshake behavior, HTMX runtime interactions, scheduler timing under real load, true concurrent multi-user race outcomes.
+- Manual verification required for runtime-only claims (UI behavior, network timing, container orchestration).
 
 3. Prompt / Repository Mapping Summary
-- Prompt core goals mapped: LAN/offline Flask+SQLite+HTMX clinic operations, auth/demographics/assessments, scheduling+holds, visit state machine, coverage zones, reminders, privacy controls, observability.
-- Main areas reviewed: auth/security (`repo/app/routes/auth.py`, `repo/app/utils/antireplay.py`), assessments (`repo/app/routes/assessments.py`, `repo/app/utils/scoring.py`), scheduling/visits (`repo/app/routes/schedule.py`, `repo/app/routes/visits.py`), coverage (`repo/app/routes/coverage.py` + templates), privacy/export/deletion (`repo/app/routes/patient.py`), observability (`repo/app/routes/observability.py`, `repo/app/utils/middleware.py`), tests.
-- Major mismatch found: core scheduling configurability and zone-configuration UI completeness are not fully deliverable through provided UI/workflows.
+- Prompt core goal: LAN/offline-capable clinic operations (auth, demographics, assessments + explainable risk, scheduling/holds, visit state machine, zones, reminders, audit/security/observability).
+- Main mapped implementation: auth (`repo/app/routes/auth.py`), demographics (`repo/app/routes/patient.py`, `repo/app/routes/staff.py`), assessments (`repo/app/routes/assessments.py`, `repo/app/utils/scoring.py`), scheduling (`repo/app/routes/schedule.py`), visits (`repo/app/routes/visits.py`, `repo/app/utils/state_machine.py`), zones (`repo/app/routes/coverage.py`), reminders (`repo/app/routes/reminders.py`), observability (`repo/app/routes/observability.py`), middleware/security (`repo/app/utils/middleware.py`, `repo/app/utils/antireplay.py`).
+- Overall shape is product-like and mostly Prompt-aligned, with one remaining High-severity requirement-fit gap around request-token idempotency enforcement on scheduling hold transitions.
 
 4. High / Blocker Coverage Panel
+- A. Prompt-fit / completeness blockers: Partial Pass
+  - Reason: most core flows exist, but request-token idempotency is not enforced for scheduling hold transitions although Prompt requires idempotent transitions with request tokens.
+  - Evidence: `repo/app/routes/schedule.py:106`, `repo/app/routes/schedule.py:122`, `repo/app/templates/schedule/available.html:40`
+  - Finding IDs: H-01
+- B. Static delivery / structure blockers: Pass
+  - Reason: startup/test/config/docs and entry points are statically coherent.
+  - Evidence: `repo/README.md:23`, `repo/run.py:9`, `repo/app/__init__.py:70`
+- C. Frontend-controllable interaction / state blockers: Partial Pass
+  - Reason: many forms include anti-replay + disabled/submitting patterns, but schedule hold path lacks request-token-based duplicate suppression contract.
+  - Evidence: `repo/app/templates/schedule/confirm.html:19`, `repo/app/templates/visits/_visit_rows.html:17`, `repo/app/templates/schedule/available.html:40`
+  - Finding IDs: H-01
+- D. Data exposure / delivery-risk blockers: Pass
+  - Reason: previously reported reveal XSS path is now escaped.
+  - Evidence: `repo/app/routes/patient.py:201`, `repo/app/routes/staff.py:89`, `repo/tests/test_demographics.py:254`
+- E. Test-critical gaps: Partial Pass
+  - Reason: broad test suite exists; high-risk duplicate request-token handling on scheduling holds is not covered.
+  - Evidence: `repo/tests/test_scheduling.py:365`, `repo/tests/test_scheduling.py:411`
+  - Finding IDs: H-01
 
-A. Prompt-fit / completeness blockers
-- Conclusion: Fail
-- Reason: core scheduling setup is not fully operable from delivered application workflows (no clinician/template creation surfaces; bulk generation depends on pre-existing templates).
-- Evidence: `repo/app/routes/schedule.py:530`, `repo/app/routes/schedule.py:532`, `repo/app/routes/admin.py:13`, `repo/seed_test_data.py:7`, `repo/seed_test_data.py:45`
-- Finding IDs: F-01
-
-B. Static delivery / structure blockers
-- Conclusion: Partial Pass
-- Reason: project structure is coherent and entry points are consistent, but docs contain material architecture drift (documented scheduler responsibilities differ from implementation).
-- Evidence: `repo/README.md:23`, `repo/run.py:9`, `repo/app/__init__.py:59`, `docs/design.md:53`
-- Finding IDs: M-02
-
-C. Frontend-controllable interaction / state blockers
-- Conclusion: Fail
-- Reason: coverage-zone admin UI does not expose required prompt fields for neighborhood/distance/minimum/fee configuration through normal create/update screens.
-- Evidence: `repo/app/templates/coverage/zones.html:13`, `repo/app/templates/coverage/zones.html:24`, `repo/app/templates/coverage/zone_detail.html:5`, `repo/app/routes/coverage.py:87`
-- Finding IDs: F-02
-
-D. Data exposure / delivery-risk blockers
-- Conclusion: Partial Pass
-- Reason: no hardcoded production secrets in app code paths; test-only hardcoded compose secrets are clearly labeled in README.
-- Evidence: `repo/docker-compose.yml:9`, `repo/README.md:74`, `repo/README.md:76`
-- Finding IDs: None
-
-E. Test-critical gaps
-- Conclusion: Partial Pass
-- Reason: broad and strong test suite exists, but no test coverage proves admin UI can complete prompt-required zone configuration workflows end-to-end.
-- Evidence: `repo/tests/e2e/test_zones.py:19`, `repo/tests/e2e/test_zones.py:20`, `repo/app/templates/coverage/zones.html:13`
-- Finding IDs: F-02
+Section-by-section review (Acceptance 1-6)
+- 1.1 Documentation and static verifiability: Partial Pass
+  - Rationale: README + API spec are workable; architecture doc has stale schema claims that reduce trust in docs-as-authority.
+  - Evidence: `repo/README.md:23`, `docs/design.md:138`, `repo/app/models/user.py:7`
+- 1.2 Material deviation from Prompt: Partial Pass
+  - Rationale: business scope is implemented, but idempotent request-token enforcement is weakened on scheduling holds.
+  - Evidence: `repo/app/routes/schedule.py:106`, `repo/app/templates/schedule/available.html:40`
+- 2.1 Core requirement coverage: Partial Pass
+  - Rationale: auth, demographics, assessments, scheduling, visits, zones, reminders, observability are present; one core contract gap remains (H-01).
+  - Evidence: `repo/app/routes/assessments.py:126`, `repo/app/routes/visits.py:44`, `repo/app/routes/coverage.py:68`, `repo/app/routes/reminders.py:16`
+- 2.2 End-to-end project shape: Pass
+  - Rationale: coherent multi-module app with templates/models/tests/docs, not a snippet.
+  - Evidence: `repo/app/__init__.py:92`, `repo/tests/conftest.py:6`, `repo/README.md:178`
+- 3.1 Structure and modularity: Pass
+  - Rationale: reasonable blueprint/model/utils split.
+  - Evidence: `repo/app/routes/schedule.py:13`, `repo/app/models/scheduling.py:39`, `repo/app/utils/state_machine.py:23`
+- 3.2 Maintainability/extensibility: Partial Pass
+  - Rationale: mostly maintainable; design doc drift and mixed audit `details_json` typing create maintenance friction.
+  - Evidence: `docs/design.md:180`, `repo/app/utils/audit.py:29`, `repo/app/routes/admin.py:74`
+- 4.1 Engineering detail/professionalism: Partial Pass
+  - Rationale: strong baseline (CSRF, anti-replay, RBAC, logging), but idempotency not consistently enforced for scheduling holds.
+  - Evidence: `repo/app/utils/antireplay.py:23`, `repo/app/utils/auth.py:9`, `repo/app/routes/schedule.py:106`
+- 4.2 Product credibility: Partial Pass
+  - Rationale: credible product structure and rich tests, but High issue prevents full acceptance.
+  - Evidence: `repo/tests/test_auth.py:286`, `repo/tests/test_visits.py:150`, `repo/tests/test_scheduling.py:482`
+- 5.1 Prompt understanding/fit: Partial Pass
+  - Rationale: Prompt semantics are largely understood; request-token idempotency requirement is only partially realized.
+  - Evidence: `repo/app/routes/visits.py:55`, `repo/app/utils/state_machine.py:42`, `repo/app/routes/schedule.py:106`
+- 6.1 Visual/interaction quality (static-only): Cannot Confirm
+  - Rationale: static structure supports hierarchy and state styling, but rendered quality/accessibility/responsiveness require manual verification.
+  - Evidence: `repo/app/static/css/style.css:143`, `repo/app/templates/base.html:67`
 
 5. Confirmed Blocker / High Findings
-
-- Finding ID: F-01
-- Severity: High
-- Conclusion: Core scheduling configuration is incomplete from application surfaces.
-- Brief rationale: bulk schedule generation requires existing `ScheduleTemplate` records, but delivered routes/templates do not provide clinician-profile/template CRUD to create those records in-product from a clean deployment.
-- Evidence: `repo/app/routes/schedule.py:530`, `repo/app/routes/schedule.py:532`, `repo/app/models/scheduling.py:16`, `repo/app/routes/admin.py:13`, `repo/seed_test_data.py:7`
-- Impact: core prompt flow (admin-configured scheduling, then booking) can be blocked unless operators perform direct DB seeding/manual data bootstrap outside normal workflows.
-- Minimum actionable fix: add admin workflows (or clearly documented bootstrap command) for clinician profile creation + schedule template CRUD, with static docs/tests proving clean-install operability.
-
-- Finding ID: F-02
-- Severity: High
-- Conclusion: Coverage-zone UI does not fully implement required administrator configuration controls.
-- Brief rationale: prompt requires configuring ZIP/neighborhood groups, distance bands, minimum order thresholds, and delivery fees. Create/update UI surfaces only partially expose this data.
-- Evidence: `repo/app/templates/coverage/zones.html:13`, `repo/app/templates/coverage/zones.html:21`, `repo/app/templates/coverage/zone_detail.html:5`, `repo/app/routes/coverage.py:94`, `repo/app/routes/coverage.py:172`
-- Impact: administrators cannot reliably configure all required zone policies through normal UI, risking incorrect coverage/fee commitments.
-- Minimum actionable fix: extend zone create/update UI forms to include all policy fields and persist them; add E2E tests validating those fields in UI workflow.
+- Finding ID: H-01
+  - Severity: High
+  - Conclusion: Request-token idempotency is not enforced for scheduling hold transitions.
+  - Brief rationale: hold routes accept optional `request_token` but do not perform token lookup/replay handling; hold form does not send token by default; Prompt requires idempotent transitions with request tokens.
+  - Evidence: `repo/app/templates/schedule/available.html:40`, `repo/app/routes/schedule.py:106`, `repo/app/routes/schedule.py:122`, `repo/app/routes/schedule.py:277`, `repo/app/models/scheduling.py:81`
+  - Impact: duplicate submissions may create unintended extra holds (or DB unique conflicts when the same token is reused), weakening Prompt-required traceable/idempotent transition behavior.
+  - Minimum actionable fix: make `request_token` mandatory on hold forms (patient + behalf), enforce replay check before insert, and return controlled duplicate response (e.g., 409 or redirect to existing reservation) instead of relying on DB uniqueness.
 
 6. Other Findings Summary
-
 - Severity: Medium
-- Conclusion: Architecture documentation is stale/misaligned with implementation scheduler behavior.
-- Evidence: `docs/design.md:53`, `docs/design.md:57`, `repo/app/__init__.py:59`, `repo/app/__init__.py:60`
-- Minimum actionable fix: update `docs/design.md` scheduler section to match actual jobs/frequencies and remove unimplemented claims.
-
+  - Conclusion: Architecture documentation is materially stale vs implemented schema/runtime model.
+  - Evidence: `docs/design.md:138`, `docs/design.md:180`, `repo/app/models/user.py:50`, `repo/app/models/audit.py:5`
+  - Minimum actionable fix: update `docs/design.md` tables/ERD to match current models (remove/mark non-implemented tables like `sessions`, align audit field names/types).
 - Severity: Medium
-- Conclusion: Patient primary navigation omits direct links to key patient core flows (assessment start, booking, appointments), reducing end-to-end usability confidence.
-- Evidence: `repo/app/templates/base.html:27`, `repo/app/templates/base.html:37`, `repo/app/templates/schedule/my_appointments.html:7`, `repo/app/templates/assessments/history.html:9`
-- Minimum actionable fix: add explicit patient nav entries (Assessments, Book Appointment, My Appointments) and corresponding navigation tests.
-
+  - Conclusion: Audit details typing is inconsistent (`dict` vs JSON string), reducing queryability and forensic consistency.
+  - Evidence: `repo/app/utils/audit.py:29`, `repo/app/routes/admin.py:74`, `repo/app/routes/schedule.py:304`
+  - Minimum actionable fix: standardize `log_action(..., details=<dict>)` and remove `json.dumps(...)` at call sites.
+- Severity: Medium
+  - Conclusion: Test coverage misses schedule-hold duplicate request-token behavior.
+  - Evidence: `repo/tests/test_scheduling.py:365`, `repo/tests/test_scheduling.py:411`
+  - Minimum actionable fix: add tests for same `request_token` replay on `/schedule/hold/<id>` and `/schedule/behalf/.../hold/<id>` expecting deterministic duplicate handling.
 - Severity: Low
-- Conclusion: Encoding artifacts (mojibake) remain in multiple docs/templates.
-- Evidence: `repo/README.md:29`, `docs/design.md:6`, `repo/app/templates/index.html:3`
-- Minimum actionable fix: normalize affected files to UTF-8 and add regression lint/check.
+  - Conclusion: API/design docs still include broad “JSON for direct API calls” framing while many routes are HTML-first and mixed behavior.
+  - Evidence: `docs/api-spec.md:3`, `repo/app/routes/visits.py:79`, `repo/app/routes/schedule.py:132`
+  - Minimum actionable fix: annotate endpoint response modes per route (HTML fragment vs JSON vs redirect), especially for HTMX-first flows.
 
 7. Data Exposure and Delivery Risk Summary
-- Real sensitive information exposure: Partial Pass
-  - No production secrets in app logic, but test compose includes hardcoded credentials/secrets (disclosed as test-only).
-  - Evidence: `repo/docker-compose.yml:9`, `repo/README.md:76`
-- Hidden debug/config/demo surfaces: Pass
-  - Test seeding is gated by explicit env flag.
-  - Evidence: `repo/seed_test_data.py:7`
+- Real sensitive information exposure: Pass
+  - Evidence: reveal endpoints escape decrypted output (`repo/app/routes/patient.py:201`, `repo/app/routes/staff.py:89`).
+- Hidden debug/config/demo-only surfaces: Partial Pass
+  - Evidence: docker-compose hardcoded keys are disclosed as test-only (`repo/README.md:74`, `repo/docker-compose.yml:9`).
 - Undisclosed mock scope/default mock behavior: Pass
-  - This is not a mock-only frontend; server-side persistence and routes are implemented.
-  - Evidence: `repo/app/__init__.py:204`, `repo/app/models/visit.py:5`
+  - Evidence: implementation is real Flask+SQLite flow, not frontend-only mock.
 - Fake-success or misleading delivery behavior: Partial Pass
-  - Some prompt-critical admin workflows are only partially UI-exposed (see F-01/F-02).
-  - Evidence: `repo/app/routes/schedule.py:530`, `repo/app/templates/coverage/zones.html:13`
+  - Evidence: no obvious forced-success stubs in core routes; doc drift remains (`docs/design.md:180`).
 - Visible UI/console/storage leakage risk: Partial Pass
-  - Sensitive IDs are masked by default and revealed via signed requests; logs include usernames/IPs for audit by design.
-  - Evidence: `repo/app/templates/patient/_demographics_form.html:85`, `repo/app/routes/patient.py:201`, `repo/app/utils/audit.py:78`
-
-Security Review Summary (explicit)
-- Authentication entry points: Pass
-  - Evidence: `repo/app/routes/auth.py:157`, `repo/tests/test_auth.py:296`
-- Route-level authorization: Pass
-  - Evidence: `repo/app/utils/auth.py:9`, `repo/tests/test_rbac.py:35`
-- Object-level authorization: Pass
-  - Evidence: `repo/app/routes/schedule.py:139`, `repo/app/routes/visits.py:97`, `repo/tests/test_user_isolation.py:241`
-- Function-level authorization: Pass
-  - Evidence: `repo/app/routes/reminders.py:75`, `repo/app/routes/observability.py:69`
-- Tenant/user isolation: Partial Pass
-  - Strong coverage exists for key patient data/notes/scheduling paths; complete runtime assurance still requires manual verification.
-  - Evidence: `repo/tests/test_user_isolation.py:94`, `repo/tests/test_notes.py:155`
-- Admin/internal/debug protection: Pass
-  - Evidence: `repo/app/routes/health.py:22`, `repo/tests/test_observability.py:80`
+  - Evidence: structured logging present; manual runtime verification still required for production log redaction under all error paths (`repo/app/utils/middleware.py:37`, `repo/app/utils/logging.py:7`).
 
 8. Test Sufficiency Summary
 
 Test Overview
-- Unit tests exist: Yes (`pytest`) under `repo/tests/`.
-- Component/page integration tests exist: Yes (Flask test-client route/integration style).
-- Page/route integration tests exist: Yes.
-- E2E tests exist: Yes (`Playwright`) under `repo/tests/e2e/`.
-- Test entry points: `repo/README.md:80`, `repo/run_tests.sh:51`, `repo/tests/conftest.py:6`, `repo/tests/e2e/conftest.py:13`.
+- Unit/integration tests exist: yes (`pytest`), broad module-level coverage.
+- Component/page integration tests exist: yes (Flask test-client route/view tests).
+- E2E tests exist: yes (`repo/tests/e2e/*.py`), not executed in this audit.
+- Entry points: `repo/README.md:80`, `repo/run_tests.sh:51`, `repo/tests/conftest.py:6`.
 
 Core Coverage
 - Happy path: covered
-- Key failure paths: covered
+- Key failure paths: partially covered
 - Interaction/state coverage: partially covered
 
 8.2 Coverage Mapping Table
 
 | Requirement / Risk Point | Mapped Test Case(s) | Key Assertion / Fixture / Mock | Coverage Assessment | Gap | Minimum Test Addition |
 |---|---|---|---|---|---|
-| Login + anti-replay + rate limit | `repo/tests/test_auth.py:164`, `repo/tests/test_auth.py:286`, `repo/tests/test_auth.py:296` | lockout message + required signed fields | sufficient | None | Keep |
-| Visit transition idempotency + token enforcement | `repo/tests/test_visits.py:129`, `repo/tests/test_visits.py:150` | missing token -> 422; duplicate token does not advance state twice | sufficient | None | Keep |
-| Capacity=1 scheduling race protection | `repo/tests/test_scheduling.py:525`, `repo/tests/test_scheduling.py:618` | recount guard + live concurrent threaded HTTP hold test | sufficient | None | Keep |
-| Coverage check rules (distance/windows/fees/minimums) | `repo/tests/test_coverage.py:557`, `repo/tests/test_coverage.py:686` | distance band bounds + response includes fee/minimum/window payload | sufficient | None | Keep |
-| Coverage admin UI end-to-end field completeness | `repo/tests/e2e/test_zones.py:14` | only name + zip form submission asserted | insufficient | no E2E asserting neighborhoods/distance/minimum/fee UI controls | add E2E that fills/updates all required zone policy fields via UI and verifies persisted values |
-| Reminder timing windows (24h, not 25h/past) | `repo/tests/test_reminders.py:630`, `repo/tests/test_reminders.py:643`, `repo/tests/test_reminders.py:656` | datetime-window assertions | sufficient | None | Keep |
-| Observability/admin protection | `repo/tests/test_observability.py:26`, `repo/tests/test_observability.py:101` | patient denied; admin allowed | sufficient | None | Keep |
-| Sensitive-note encryption at rest | `repo/tests/test_notes.py:31`, `repo/tests/test_notes.py:50` | ciphertext does not contain plaintext | sufficient | None | Keep |
+| Signed login + anti-replay login form wiring | `repo/tests/test_auth.py:98`, `repo/tests/test_auth.py:286` | asserts anti-replay hidden fields + unsigned POST rejected (`repo/tests/test_auth.py:291`, `repo/tests/test_auth.py:299`) | covered | None material | Keep |
+| Route authorization on admin surfaces | `repo/tests/test_observability.py:26`, `repo/tests/test_rbac.py:26` | 403 for non-admin, 200 for admin | covered | None material | Keep |
+| Object-level isolation (assessments/reservations/notes) | `repo/tests/test_user_isolation.py:94`, `repo/tests/test_user_isolation.py:241` | cross-user denial assertions | covered | Browser-session artifacts still runtime-bound | Add focused E2E session-switch test only if needed |
+| Visit transition idempotency/token behavior | `repo/tests/test_visits.py:150` | duplicate request token leaves single transition (`repo/tests/test_visits.py:187`) | covered | None material | Keep |
+| Scheduling hold request-token idempotency | no direct replay test | token hashing covered only (`repo/tests/test_scheduling.py:365`) | missing | duplicate token behavior on hold unresolved | Add replay test for same token expecting deterministic non-duplicating response |
+| Anti-replay nonce/signature enforcement | `repo/tests/test_acceptance_audit.py:128`, `repo/tests/test_security.py:195` | missing nonce 400, replay 409, bad signature 400 | covered | None material | Keep |
 
 8.3 Security Coverage Audit
-- Authentication: covered (`repo/tests/test_auth.py:98`, `repo/tests/test_auth.py:296`)
-- Route authorization: covered (`repo/tests/test_rbac.py:35`, `repo/tests/test_observability.py:26`)
-- Object-level authorization: covered (`repo/tests/test_user_isolation.py:241`, `repo/tests/test_notes.py:146`)
-- Tenant/data isolation: partially covered (`repo/tests/test_user_isolation.py:94`, `repo/tests/test_user_isolation.py:144`)
-- Admin/internal protection: covered (`repo/tests/test_observability.py:80`, `repo/tests/test_audit_security.py:785`)
-
-Major Gaps (highest risk)
-1. No E2E/UI verification for full zone policy configuration fields (neighborhood/distance/minimum/fee).
-2. No end-to-end test proving clean-install scheduling setup via in-product admin flows (clinician/template bootstrap path).
-3. Limited frontend navigation-flow tests for patient core tasks without direct URL knowledge.
+- authentication: covered (credential + anti-replay/login form tests exist).
+- route authorization: covered (admin/staff/patient role boundaries tested).
+- object-level authorization: covered for key routes, but runtime UI sequencing still needs manual verification.
+- tenant/data isolation: partially covered (strong server tests; runtime browser-state leakage cannot be fully proven statically).
+- admin/internal protection: covered for major admin endpoints including `/health/detailed` and `/admin/operations/sessions`.
 
 8.4 Final Coverage Judgment
 - Partial Pass
-- Major risks covered: auth, anti-replay, RBAC, object isolation, idempotent transitions, concurrency guard, reminder timing.
-- Residual uncovered risk: UI-level completeness for prompt-critical admin configuration paths could fail while current tests still pass.
+- Covered: auth, RBAC, anti-replay, visit transitions, scheduling capacity/race regression, reminders.
+- Uncovered risk: schedule-hold request-token replay semantics (H-01) could allow severe behavior while current tests still pass.
 
 9. Engineering Quality Summary
-- Engineering structure is generally solid (modular blueprints/models/utils, meaningful tests, security middleware).
-- Material maintainability concern is product-surface completeness rather than code chaos: core scheduling and zone policy configuration rely on partially exposed UI paths.
-- Logging/observability foundations are professional (structured logs, correlation IDs, slow-query persistence), but docs should be synchronized with actual behavior.
-
-Section-by-section Review (Six Acceptance Sections)
-
-1. Hard Gates
-- 1.1 Documentation and static verifiability
-  - Conclusion: Partial Pass
-  - Rationale: runnable docs and entry points are present and mostly consistent, but architecture docs contain stale implementation claims.
-  - Evidence: `repo/README.md:23`, `repo/run.py:9`, `docs/design.md:53`, `repo/app/__init__.py:59`
-- 1.2 Material deviation from Prompt
-  - Conclusion: Partial Pass
-  - Rationale: most prompt domains are implemented, but key admin configurability gaps weaken core scheduling/coverage goals.
-  - Evidence: `repo/app/routes/schedule.py:530`, `repo/app/templates/coverage/zones.html:13`
-
-2. Delivery Completeness
-- 2.1 Core requirement coverage
-  - Conclusion: Fail
-  - Rationale: coverage-zone and scheduling configuration are not fully operable through delivered workflows.
-  - Evidence: `repo/app/templates/coverage/zones.html:13`, `repo/app/routes/schedule.py:532`
-- 2.2 End-to-end 0?1 deliverable
-  - Conclusion: Partial Pass
-  - Rationale: complete repository shape exists, but clean-install operational setup for scheduling is under-specified/incomplete in product surfaces.
-  - Evidence: `repo/README.md:178`, `repo/seed_test_data.py:7`, `repo/tests/test_scheduling.py:246`
-
-3. Engineering and Architecture Quality
-- 3.1 Structure and modularity
-  - Conclusion: Pass
-  - Rationale: clear decomposition by route/model/util/test domains.
-  - Evidence: `repo/app/__init__.py:92`, `repo/app/routes/schedule.py:13`, `repo/app/models/visit.py:5`
-- 3.2 Maintainability/extensibility
-  - Conclusion: Partial Pass
-  - Rationale: maintainable internals, but business-critical admin configuration surface is incomplete.
-  - Evidence: `repo/app/routes/coverage.py:154`, `repo/app/templates/coverage/zone_detail.html:5`
-
-4. Engineering Details and Professionalism
-- 4.1 Error handling/logging/validation/API quality
-  - Conclusion: Pass
-  - Rationale: strong validation, anti-replay, RBAC, structured logs, correlation IDs, and slow-query capture.
-  - Evidence: `repo/app/utils/antireplay.py:57`, `repo/app/utils/middleware.py:99`, `repo/app/routes/patient.py:34`
-- 4.2 Product-level organization
-  - Conclusion: Partial Pass
-  - Rationale: product-like shape exists but with notable workflow completeness gaps.
-  - Evidence: `repo/app/routes/observability.py:13`, `repo/app/routes/schedule.py:505`
-
-5. Prompt Understanding and Requirement Fit
-- 5.1 Business understanding and fit
-  - Conclusion: Partial Pass
-  - Rationale: understanding is broadly correct (roles, risk scoring, reminders, observability), but admin configuration fit is incomplete for two prompt-critical domains.
-  - Evidence: `repo/app/utils/scoring.py:116`, `repo/app/utils/reminders.py:27`, `repo/app/templates/coverage/zones.html:13`
-
-6. Aesthetics / Frontend static quality
-- 6.1 Visual/interaction quality
-  - Conclusion: Cannot Confirm Statistically
-  - Rationale: static code shows consistent component/layout/state classes, but final rendering quality and interaction fidelity require runtime/manual verification.
-  - Evidence: `repo/app/static/css/style.css:1`, `repo/app/templates/base.html:62`, `repo/app/templates/visits/_visit_rows.html:17`
+- Major architecture is credible: modular blueprints/models/utils, strong baseline security middleware, and local observability primitives.
+- Security Review Summary (explicit)
+  - authentication entry points: Pass (`repo/app/routes/auth.py:157`, `repo/tests/test_auth.py:286`)
+  - route-level authorization: Pass (`repo/app/utils/auth.py:9`, `repo/app/routes/admin.py:15`)
+  - object-level authorization: Partial Pass (`repo/app/routes/visits.py:97`, `repo/app/routes/schedule.py:139`, `repo/app/routes/reminders.py:35`)
+  - function-level authorization: Pass (`repo/app/routes/coverage.py:69`, `repo/app/routes/observability.py:14`)
+  - tenant/user isolation: Partial Pass (good server checks/tests; runtime UI/session artifacts need manual verification) (`repo/tests/test_user_isolation.py:94`)
+  - admin/internal/debug protection: Pass (`repo/app/routes/health.py:22`, `repo/app/routes/observability.py:69`)
+- Main material engineering weakness is already captured in H-01 (idempotency contract inconsistency).
 
 10. Visual and Interaction Summary
-- Static structure supports: role-specific navigation, HTMX partial updates, polling dashboard, form validation hints, disabled-on-submit behavior in critical forms.
-  - Evidence: `repo/app/templates/base.html:23`, `repo/app/templates/visits/_visit_rows.html:16`, `repo/app/templates/schedule/confirm.html:19`
-- Cannot statically confirm: visual polish, responsive behavior, focus/keyboard accessibility, actual hover/transition rendering quality.
-- Static weaknesses: prompt-critical admin UI for zone policy fields is incomplete.
-  - Evidence: `repo/app/templates/coverage/zones.html:13`, `repo/app/templates/coverage/zone_detail.html:5`
+- Static structure supports basic UX scaffolding: shared layout/nav, forms/tables/cards, status badges, and loading indicator (`repo/app/templates/base.html:67`, `repo/app/static/css/style.css:173`).
+- Core interaction state support exists in key flows (submitting/disabled controls in visit and confirmation flows) (`repo/app/templates/visits/_visit_rows.html:17`, `repo/app/templates/schedule/confirm.html:19`).
+- Cannot confirm final rendered quality, responsiveness, keyboard behavior, and HTMX transition smoothness without manual run.
 
 11. Next Actions
-1. Implement admin clinician-profile + schedule-template management workflows (or documented bootstrap command) and add integration/E2E tests for clean-install scheduling setup.
-2. Expand coverage zone create/update UI to include neighborhoods, distance bands, minimum order threshold, and delivery fee; add E2E assertions for those fields.
-3. Align `docs/design.md` scheduler/architecture claims with real implemented jobs and frequencies.
-4. Add patient navigation links for assessment start and booking/appointments to improve first-use task closure.
-5. Add one E2E test validating full prompt-level zone configuration lifecycle from UI to `/coverage/check` output.
-6. Normalize lingering mojibake/encoding artifacts in docs/templates and keep encoding regression checks in CI.
+1. (High) Enforce request-token idempotency on hold endpoints and make hold forms always submit `request_token`.
+2. (High) Add regression tests for duplicate `request_token` replay on patient/staff hold endpoints.
+3. (Medium) Align `docs/design.md` schema/ERD with current models and clearly mark non-implemented concepts.
+4. (Medium) Normalize `audit.details_json` to structured dict usage across all call sites.
+5. (Medium) Clarify API docs response modes (fragment vs JSON vs redirect) for HTMX-heavy routes.
+6. (Manual verify) Validate runtime duplicate-click behavior and expected duplicate response UX on scheduling hold actions.

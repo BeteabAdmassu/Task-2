@@ -379,7 +379,6 @@ def behalf_step(patient_id, step):
 @antireplay
 def behalf_submit(patient_id):
     """Staff submits completed assessment; result is owned by the patient."""
-    import json as _json
     from app.utils.audit import log_action
 
     patient, err = _get_behalf_patient(patient_id)
@@ -438,13 +437,13 @@ def behalf_submit(patient_id):
         action="on_behalf_assessment",
         resource_type="assessment_result",
         resource_id=result.id,
-        details=_json.dumps({
+        details={
             "actor_id": current_user.id,
             "actor_role": current_user.role,
             "patient_id": patient_id,
             "risk_level": risk_level,
             "context": "staff submitted assessment on behalf of patient",
-        }),
+        },
     )
 
     return redirect(url_for("assessments.result", assessment_id=result.id))

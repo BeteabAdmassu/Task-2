@@ -7,56 +7,56 @@ MeridianCare is a self-contained clinic operations platform that runs entirely o
 
 ### Architecture Diagram
 ```
-┌─────────────────────────────────────────────────────────┐
-│                      Browser (HTMX)                     │
-│  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌───────────┐  │
-│  │ Login/   │ │ Patient  │ │ Sched/   │ │ Admin     │  │
-│  │ Register │ │ Portal   │ │ Dashboard│ │ Console   │  │
-│  └────┬─────┘ └────┬─────┘ └────┬─────┘ └─────┬─────┘  │
-└───────┼─────────────┼───────────┼──────────────┼────────┘
-        │  HTTPS (self-signed)    │              │
-┌───────┼─────────────┼───────────┼──────────────┼────────┐
-│       ▼             ▼           ▼              ▼        │
-│  ┌──────────────────────────────────────────────────┐   │
-│  │              Flask Application                    │   │
-│  │  ┌─────────┐ ┌──────────┐ ┌────────────────────┐ │   │
-│  │  │ Auth    │ │ CSRF /   │ │ Correlation ID     │ │   │
-│  │  │ + RBAC  │ │ Anti-    │ │ Middleware          │ │   │
-│  │  │ Middle- │ │ Replay   │ │                    │ │   │
-│  │  │ ware    │ │ Guard    │ │                    │ │   │
-│  │  └────┬────┘ └────┬─────┘ └────────┬───────────┘ │   │
-│  │       ▼           ▼                ▼             │   │
-│  │  ┌──────────────────────────────────────────────┐ │   │
-│  │  │              Route Blueprints                │ │   │
-│  │  │  auth │ patient │ schedule │ visits │ admin  │ │   │
-│  │  │  assessments │ zones │ reminders │ audit    │ │   │
-│  │  └──────────────────┬───────────────────────────┘ │   │
-│  │                     ▼                             │   │
-│  │  ┌──────────────────────────────────────────────┐ │   │
-│  │  │           Business Logic Layer               │ │   │
-│  │  │  State Machine │ Risk Engine │ Scheduler     │ │   │
-│  │  │  Zone Lookup │ Audit Logger │ Encryption     │ │   │
-│  │  └──────────────────┬───────────────────────────┘ │   │
-│  │                     ▼                             │   │
-│  │  ┌──────────────────────────────────────────────┐ │   │
-│  │  │              Data Access Layer               │ │   │
-│  │  │         (Parameterized SQL / ORM)            │ │   │
-│  │  └──────────────────┬───────────────────────────┘ │   │
-│  └─────────────────────┼────────────────────────────┘   │
-│                        ▼                                │
-│  ┌──────────────────────────────────────────────────┐   │
-│  │              SQLite Database                      │   │
-│  │  (single file, encryption at rest for PII fields) │   │
-│  └──────────────────────────────────────────────────┘   │
-│                                                         │
-│  ┌──────────────────────────────────────────────────┐   │
-│  │         APScheduler (in-process)                  │   │
-│  │  • Reservation hold expiry (every 1 min)          │   │
-│  │  • Reminder generation (every 15 min)             │   │
-│  └──────────────────────────────────────────────────┘   │
-│                                                         │
-│                Flask Server Process                     │
-└─────────────────────────────────────────────────────────┘
++---------------------------------------------------------+
+|                      Browser (HTMX)                     |
+|  +----------+ +----------+ +----------+ +-----------+  |
+|  | Login/   | | Patient  | | Sched/   | | Admin     |  |
+|  | Register | | Portal   | | Dashboard| | Console   |  |
+|  +----+-----+ +----+-----+ +----+-----+ +-----+-----+  |
++-------+-------------+-----------+--------------+--------+
+        |  HTTPS (self-signed)    |              |
++-------+-------------+-----------+--------------+--------+
+|       v             v           v              v        |
+|  +--------------------------------------------------+   |
+|  |              Flask Application                    |   |
+|  |  +---------+ +----------+ +--------------------+ |   |
+|  |  | Auth    | | CSRF /   | | Correlation ID     | |   |
+|  |  | + RBAC  | | Anti-    | | Middleware          | |   |
+|  |  | Middle- | | Replay   | |                    | |   |
+|  |  | ware    | | Guard    | |                    | |   |
+|  |  +----+----+ +----+-----+ +--------+-----------+ |   |
+|  |       v           v                v             |   |
+|  |  +----------------------------------------------+ |   |
+|  |  |              Route Blueprints                | |   |
+|  |  |  auth | patient | schedule | visits | admin  | |   |
+|  |  |  assessments | zones | reminders | audit    | |   |
+|  |  +------------------+---------------------------+ |   |
+|  |                     v                             |   |
+|  |  +----------------------------------------------+ |   |
+|  |  |           Business Logic Layer               | |   |
+|  |  |  State Machine | Risk Engine | Scheduler     | |   |
+|  |  |  Zone Lookup | Audit Logger | Encryption     | |   |
+|  |  +------------------+---------------------------+ |   |
+|  |                     v                             |   |
+|  |  +----------------------------------------------+ |   |
+|  |  |              Data Access Layer               | |   |
+|  |  |         (Parameterized SQL / ORM)            | |   |
+|  |  +------------------+---------------------------+ |   |
+|  +---------------------+----------------------------+   |
+|                        v                                |
+|  +--------------------------------------------------+   |
+|  |              SQLite Database                      |   |
+|  |  (single file, encryption at rest for PII fields) |   |
+|  +--------------------------------------------------+   |
+|                                                         |
+|  +--------------------------------------------------+   |
+|  |         APScheduler (in-process)                  |   |
+|  |  * Reservation hold expiry (every 1 min)          |   |
+|  |  * Reminder generation (every 15 min)             |   |
+|  +--------------------------------------------------+   |
+|                                                         |
+|                Flask Server Process                     |
++---------------------------------------------------------+
 ```
 
 ### Key Architecture Decisions
@@ -67,13 +67,13 @@ MeridianCare is a self-contained clinic operations platform that runs entirely o
 
 3. **In-process scheduler over external cron**: APScheduler runs within the Flask process, eliminating the need for OS-level cron configuration and ensuring scheduler state is co-located with application state.
 
-4. **Server-side sessions over JWT**: Sessions stored in SQLite enable server-side session invalidation, which is critical for role changes and account deactivation taking effect immediately.
+4. **Flask-Login cookie sessions**: Session state is managed by Flask-Login using signed cookies. Server-side session invalidation on role changes and deactivation is achieved by revoking the session at login time combined with the `is_active` flag check on every request -- no custom session table is needed.
 
 5. **Field-level encryption over full-disk encryption**: Fernet encryption on specific PII/clinical fields provides defense-in-depth even if the SQLite file is copied from the workstation.
 
 ### Request Flow
 ```
-Browser → HTTPS → Flask Middleware Pipeline:
+Browser -> HTTPS -> Flask Middleware Pipeline:
   1. Correlation ID assignment (UUID per request)
   2. Structured logging (start)
   3. CSRF validation (POST/PUT/DELETE)
@@ -81,10 +81,10 @@ Browser → HTTPS → Flask Middleware Pipeline:
   5. Role-based authorization
   6. Anti-replay validation (sensitive endpoints)
   7. Idempotency token validation (state-changing endpoints)
-  8. → Route handler → Business logic → Database
+  8. -> Route handler -> Business logic -> Database
   9. Audit log recording
   10. Structured logging (end, with duration)
-  11. ← Response (HTML partial for HTMX / JSON for API)
+  11. <- Response (HTML partial for HTMX / JSON for API)
 ```
 
 ---
@@ -133,36 +133,38 @@ playwright
 
 ### Entity Relationship Overview
 ```
-users ──────┬──── patient_demographics
-            │
-            ├──── sessions
-            │
-            ├──── login_attempts
-            │
-            ├──── visits ──────┬──── visit_transitions
-            │     │            └──── assessment_results
-            │     │
-            │     └──── reservations ──── slots
-            │                              │
-            ├──── reminders                └──── rooms
-            │
-            └──── audit_log
+users ------+---- patient_demographics
+            |
+            +---- login_attempts
+            |
+            +---- visits ------+---- visit_transitions
+            |     |            +---- assessment_results
+            |     |
+            |     +---- reservations ---- slots
+            |                              |
+            +---- reminders                +---- rooms
+            |
+            +---- audit_logs
 
-clinicians ──── schedule_templates ──── slots
+clinicians ---- schedule_templates ---- slots
 
-assessment_templates ──── assessment_results
-                     └──── assessment_drafts
-                     └──── reassessment_config
+assessment_templates ---- assessment_results
+                     +---- assessment_drafts
 
-coverage_zones ──── zone_zip_codes
-               └──── zone_delivery_windows
+coverage_zones ---- zone_assignments
+               +---- zone_delivery_windows
 
 holidays (standalone)
 request_tokens (standalone)
-signed_nonces (standalone)
+signed_requests (standalone)
 anomaly_alerts (standalone)
 slow_queries (standalone)
+demographics_change_log (standalone)
+clinical_notes (standalone)
+reminder_config (standalone)
 ```
+
+> **Note:** Session state is managed by Flask-Login signed cookies -- no `sessions` table is persisted to the database.
 
 ### Table Definitions
 
@@ -177,17 +179,6 @@ slow_queries (standalone)
 | created_at | TIMESTAMP | NOT NULL, DEFAULT CURRENT_TIMESTAMP | |
 | updated_at | TIMESTAMP | NOT NULL | |
 
-#### `sessions`
-| Column | Type | Constraints | Notes |
-|--------|------|-------------|-------|
-| id | TEXT | PRIMARY KEY | Session ID (UUID) |
-| user_id | INTEGER | FK → users.id | |
-| ip_address | TEXT | NOT NULL | |
-| user_agent | TEXT | | |
-| created_at | TIMESTAMP | NOT NULL | |
-| last_activity | TIMESTAMP | NOT NULL | |
-| expires_at | TIMESTAMP | NOT NULL | Default: 30 min inactivity |
-
 #### `login_attempts`
 | Column | Type | Constraints | Notes |
 |--------|------|-------------|-------|
@@ -201,7 +192,7 @@ slow_queries (standalone)
 | Column | Type | Constraints | Notes |
 |--------|------|-------------|-------|
 | id | INTEGER | PRIMARY KEY AUTOINCREMENT | |
-| user_id | INTEGER | FK → users.id, UNIQUE | |
+| user_id | INTEGER | FK -> users.id, UNIQUE | |
 | full_name | TEXT | NOT NULL | |
 | date_of_birth | DATE | NOT NULL | Cannot be in the future |
 | gender | TEXT | | |
@@ -222,7 +213,7 @@ slow_queries (standalone)
 | Column | Type | Constraints | Notes |
 |--------|------|-------------|-------|
 | id | INTEGER | PRIMARY KEY AUTOINCREMENT | |
-| user_id | INTEGER | FK → users.id, UNIQUE | |
+| user_id | INTEGER | FK -> users.id, UNIQUE | |
 | specialty | TEXT | | |
 | default_slot_duration_minutes | INTEGER | DEFAULT 15 | |
 
@@ -230,7 +221,7 @@ slow_queries (standalone)
 | Column | Type | Constraints | Notes |
 |--------|------|-------------|-------|
 | id | INTEGER | PRIMARY KEY AUTOINCREMENT | |
-| clinician_id | INTEGER | FK → clinicians.id | |
+| clinician_id | INTEGER | FK -> clinicians.id | |
 | day_of_week | INTEGER | NOT NULL | 0=Monday, 6=Sunday |
 | start_time | TIME | NOT NULL | |
 | end_time | TIME | NOT NULL | |
@@ -249,8 +240,8 @@ slow_queries (standalone)
 | Column | Type | Constraints | Notes |
 |--------|------|-------------|-------|
 | id | INTEGER | PRIMARY KEY AUTOINCREMENT | |
-| clinician_id | INTEGER | FK → clinicians.id | |
-| room_id | INTEGER | FK → rooms.id, NULLABLE | |
+| clinician_id | INTEGER | FK -> clinicians.id | |
+| room_id | INTEGER | FK -> rooms.id, NULLABLE | |
 | date | DATE | NOT NULL | |
 | start_time | TIME | NOT NULL | |
 | end_time | TIME | NOT NULL | |
@@ -262,12 +253,13 @@ slow_queries (standalone)
 | Column | Type | Constraints | Notes |
 |--------|------|-------------|-------|
 | id | INTEGER | PRIMARY KEY AUTOINCREMENT | |
-| slot_id | INTEGER | FK → slots.id | |
-| patient_id | INTEGER | FK → users.id | |
+| slot_id | INTEGER | FK -> slots.id | |
+| patient_id | INTEGER | FK -> users.id | |
 | status | TEXT | NOT NULL | held, confirmed, expired, canceled |
 | held_at | TIMESTAMP | | |
 | confirmed_at | TIMESTAMP | | |
 | expires_at | TIMESTAMP | | held_at + 10 minutes |
+| request_token | TEXT | UNIQUE, NULLABLE | SHA-256 hash of raw token; used for idempotency on hold endpoints |
 
 #### `holidays`
 | Column | Type | Constraints | Notes |
@@ -275,15 +267,15 @@ slow_queries (standalone)
 | id | INTEGER | PRIMARY KEY AUTOINCREMENT | |
 | date | DATE | NOT NULL, UNIQUE | |
 | name | TEXT | NOT NULL | |
-| created_by | INTEGER | FK → users.id | |
+| created_by | INTEGER | FK -> users.id | |
 
 #### `visits`
 | Column | Type | Constraints | Notes |
 |--------|------|-------------|-------|
 | id | INTEGER | PRIMARY KEY AUTOINCREMENT | |
-| patient_id | INTEGER | FK → users.id | |
-| clinician_id | INTEGER | FK → clinicians.id | |
-| slot_id | INTEGER | FK → slots.id | |
+| patient_id | INTEGER | FK -> users.id | |
+| clinician_id | INTEGER | FK -> clinicians.id | |
+| slot_id | INTEGER | FK -> slots.id | |
 | status | TEXT | NOT NULL, DEFAULT 'Booked' | Booked, Pending Payment, Checked In, Seen, Canceled, No-Show |
 | created_at | TIMESTAMP | NOT NULL | |
 | updated_at | TIMESTAMP | NOT NULL | |
@@ -292,10 +284,10 @@ slow_queries (standalone)
 | Column | Type | Constraints | Notes |
 |--------|------|-------------|-------|
 | id | INTEGER | PRIMARY KEY AUTOINCREMENT | |
-| visit_id | INTEGER | FK → visits.id | |
+| visit_id | INTEGER | FK -> visits.id | |
 | from_status | TEXT | NOT NULL | |
 | to_status | TEXT | NOT NULL | |
-| changed_by | INTEGER | FK → users.id | |
+| changed_by | INTEGER | FK -> users.id | |
 | reason | TEXT | | Required for cancellations and admin overrides |
 | request_token | TEXT | UNIQUE | Idempotency enforcement |
 | timestamp | TIMESTAMP | NOT NULL | |
@@ -314,9 +306,9 @@ slow_queries (standalone)
 | Column | Type | Constraints | Notes |
 |--------|------|-------------|-------|
 | id | INTEGER | PRIMARY KEY AUTOINCREMENT | |
-| patient_id | INTEGER | FK → users.id | |
-| visit_id | INTEGER | FK → visits.id | |
-| template_id | INTEGER | FK → assessment_templates.id | |
+| patient_id | INTEGER | FK -> users.id | |
+| visit_id | INTEGER | FK -> visits.id | |
+| template_id | INTEGER | FK -> assessment_templates.id | |
 | template_version | INTEGER | NOT NULL | Snapshot of version at submission |
 | answers_json | TEXT | NOT NULL | All answers preserved |
 | scores_json | TEXT | NOT NULL | Computed scores |
@@ -328,9 +320,9 @@ slow_queries (standalone)
 | Column | Type | Constraints | Notes |
 |--------|------|-------------|-------|
 | id | INTEGER | PRIMARY KEY AUTOINCREMENT | |
-| patient_id | INTEGER | FK → users.id | |
-| visit_id | INTEGER | FK → visits.id | |
-| template_id | INTEGER | FK → assessment_templates.id | |
+| patient_id | INTEGER | FK -> users.id | |
+| visit_id | INTEGER | FK -> visits.id | |
+| template_id | INTEGER | FK -> assessment_templates.id | |
 | partial_answers_json | TEXT | NOT NULL | |
 | updated_at | TIMESTAMP | NOT NULL | |
 
@@ -338,7 +330,7 @@ slow_queries (standalone)
 | Column | Type | Constraints | Notes |
 |--------|------|-------------|-------|
 | id | INTEGER | PRIMARY KEY AUTOINCREMENT | |
-| template_id | INTEGER | FK → assessment_templates.id | |
+| template_id | INTEGER | FK -> assessment_templates.id | |
 | interval_days | INTEGER | DEFAULT 90 | |
 | is_active | BOOLEAN | DEFAULT 1 | |
 
@@ -346,7 +338,7 @@ slow_queries (standalone)
 | Column | Type | Constraints | Notes |
 |--------|------|-------------|-------|
 | id | INTEGER | PRIMARY KEY AUTOINCREMENT | |
-| patient_id | INTEGER | FK → users.id | |
+| patient_id | INTEGER | FK -> users.id | |
 | type | TEXT | NOT NULL | reassessment, pre_visit |
 | related_entity_type | TEXT | | assessment_template, visit |
 | related_entity_id | INTEGER | | |
@@ -371,55 +363,53 @@ slow_queries (standalone)
 | is_active | BOOLEAN | DEFAULT 1 | Soft delete |
 | created_at | TIMESTAMP | NOT NULL | |
 | updated_at | TIMESTAMP | NOT NULL | |
-| created_by | INTEGER | FK → users.id | |
+| created_by | INTEGER | FK -> users.id | |
 
 #### `zone_zip_codes`
 | Column | Type | Constraints | Notes |
 |--------|------|-------------|-------|
 | id | INTEGER | PRIMARY KEY AUTOINCREMENT | |
-| zone_id | INTEGER | FK → coverage_zones.id | |
+| zone_id | INTEGER | FK -> coverage_zones.id | |
 | zip_code | TEXT | NOT NULL | Unique across active zones |
 
 #### `zone_delivery_windows`
 | Column | Type | Constraints | Notes |
 |--------|------|-------------|-------|
 | id | INTEGER | PRIMARY KEY AUTOINCREMENT | |
-| zone_id | INTEGER | FK → coverage_zones.id | |
+| zone_id | INTEGER | FK -> coverage_zones.id | |
 | day_of_week | TEXT | DEFAULT 'all' | 'all' or 0-6 |
 | start_time | TIME | NOT NULL | e.g., 09:00 |
 | end_time | TIME | NOT NULL | e.g., 12:00 |
 
-#### `audit_log`
+#### `audit_logs`
 | Column | Type | Constraints | Notes |
 |--------|------|-------------|-------|
 | id | INTEGER | PRIMARY KEY AUTOINCREMENT | |
-| timestamp | TIMESTAMP | NOT NULL | |
-| event_type | TEXT | NOT NULL | auth, user_mgmt, visit, assessment, schedule, demographics, zone, data_request, admin |
-| actor_id | INTEGER | | FK → users.id (nullable for anonymized) |
-| actor_role | TEXT | | |
-| actor_ip | TEXT | | |
-| target_type | TEXT | | user, visit, assessment, slot, zone, etc. |
-| target_id | INTEGER | | |
-| action | TEXT | NOT NULL | login, logout, create, update, delete, transition, view, export, anonymize |
-| details_json | TEXT | | Before/after values, reason, etc. |
-| correlation_id | TEXT | | Request UUID |
+| user_id | INTEGER | FK -> users.id, NULLABLE | Actor (nullable for system events / anonymized users) |
+| action | TEXT | NOT NULL | e.g. login, logout, change_role, change_status, on_behalf_hold, on_behalf_confirm, on_behalf_assessment |
+| resource_type | TEXT | NOT NULL | user, reservation, assessment_result, etc. |
+| resource_id | TEXT | NULLABLE | String-cast ID of the affected resource |
+| details_json | JSON | NULLABLE | Structured dict: before/after values, reason, context, etc. Always a dict -- never a pre-serialised string |
+| ip_address | TEXT | NULLABLE | Requester IP |
+| user_agent | TEXT | NULLABLE | Up to 500 chars |
+| timestamp | TIMESTAMP | NOT NULL, indexed | Event time (UTC) |
 
-**Indexes:** `(event_type, timestamp)`, `(target_type, target_id)`, `(actor_id)`
-**Constraints:** No UPDATE or DELETE allowed (append-only)
+**Indexes:** `(timestamp)`
+**Constraints:** No UPDATE or DELETE intended (append-only audit trail)
 
 #### `request_tokens`
 | Column | Type | Constraints | Notes |
 |--------|------|-------------|-------|
 | id | INTEGER | PRIMARY KEY AUTOINCREMENT | |
 | token | TEXT | UNIQUE, NOT NULL | UUID |
-| user_id | INTEGER | FK → users.id | Bound to authenticated user |
+| user_id | INTEGER | FK -> users.id | Bound to authenticated user |
 | endpoint | TEXT | | Route path |
 | created_at | TIMESTAMP | NOT NULL | |
 | expires_at | TIMESTAMP | NOT NULL | created_at + 30 minutes |
 | used_at | TIMESTAMP | | NULL until consumed |
 | result_snapshot_json | TEXT | | Original response for idempotent replay |
 
-#### `signed_nonces`
+#### `signed_requests`
 | Column | Type | Constraints | Notes |
 |--------|------|-------------|-------|
 | id | INTEGER | PRIMARY KEY AUTOINCREMENT | |
@@ -437,7 +427,7 @@ slow_queries (standalone)
 | details_json | TEXT | | |
 | created_at | TIMESTAMP | NOT NULL | |
 | acknowledged_at | TIMESTAMP | | |
-| acknowledged_by | INTEGER | FK → users.id | |
+| acknowledged_by | INTEGER | FK -> users.id | |
 
 #### `slow_queries`
 | Column | Type | Constraints | Notes |

@@ -1,4 +1,3 @@
-import json
 from datetime import time as dt_time
 from flask import Blueprint, render_template, request, jsonify, flash, redirect, url_for
 from flask_login import current_user
@@ -71,12 +70,12 @@ def change_role(user_id):
         action="change_role",
         resource_type="user",
         resource_id=user.id,
-        details=json.dumps({
+        details={
             "target_username": user.username,
             "before": old_role,
             "after": new_role,
             "reason": reason,
-        }),
+        },
     )
 
     if request.headers.get("HX-Request"):
@@ -120,12 +119,12 @@ def change_status(user_id):
         action="change_status",
         resource_type="user",
         resource_id=user.id,
-        details=json.dumps({
+        details={
             "target_username": user.username,
             "before": old_active,
             "after": user.is_active,
             "reason": reason,
-        }),
+        },
     )
 
     if request.headers.get("HX-Request"):

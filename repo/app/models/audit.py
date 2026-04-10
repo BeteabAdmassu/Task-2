@@ -24,7 +24,7 @@ class AnomalyAlert(db.Model):
     alert_type = db.Column(db.String(50), nullable=False)  # failed_logins, new_ip, high_error_rate
     severity = db.Column(db.String(20), nullable=False, default="warning")  # info, warning, critical
     message = db.Column(db.Text, nullable=False)
-    details_json = db.Column(db.Text, nullable=True)
+    details_json = db.Column(db.JSON, nullable=True)
     created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
     acknowledged_at = db.Column(db.DateTime, nullable=True)
     acknowledged_by = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=True)

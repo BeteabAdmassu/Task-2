@@ -1,3 +1,5 @@
+import threading
+import uuid
 from datetime import datetime, timezone, timedelta, date, time
 from flask import Blueprint, render_template, request, redirect, url_for, flash, jsonify
 from flask_login import login_required, current_user
@@ -14,6 +16,12 @@ schedule_bp = Blueprint("schedule", __name__, url_prefix="/schedule")
 
 HOLD_DURATION = timedelta(minutes=10)
 MAX_SIMULTANEOUS_HOLDS = 2
+
+# Serialise the capacity-check + flush + recount window so that concurrent
+# threads in a single-process deployment (Werkzeug, SQLite) cannot both read
+# "slot available" before either commits.  For multi-process deployments the
+# database's own serialisation (row locks / SERIALIZABLE isolation) takes over.
+_HOLD_CAPACITY_LOCK = threading.Lock()
 
 
 def _has_room_conflict(room_id, slot_date, start_time, end_time, exclude_slot_id=None):
@@ -68,6 +76,8 @@ def available():
     available_slots = [s for s in slots if s.is_available]
 
     clinicians = Clinician.query.all()
+    # Generate a fresh UUID per slot so every hold form has a unique request_token.
+    slot_tokens = {s.id: str(uuid.uuid4()) for s in available_slots}
     return render_template(
         "schedule/available.html",
         slots=available_slots,
@@ -75,6 +85,7 @@ def available():
         date_from=date_from,
         date_to=date_to,
         selected_clinician=clinician_id,
+        slot_tokens=slot_tokens,
     )
 
 
@@ -91,44 +102,75 @@ def hold(slot_id):
         flash("Cannot book a slot in the past.", "danger")
         return redirect(url_for("schedule.available"))
 
-    if not slot.is_available:
-        flash("This slot is no longer available.", "warning")
+    # request_token is mandatory — check early so replays are handled before
+    # availability checks (a replayed token must return a deterministic result
+    # even if the slot is now full).
+    raw_token = request.form.get("request_token", "").strip()
+    if not raw_token:
+        msg = "A request token is required to hold a slot."
+        if request.headers.get("HX-Request"):
+            return f'<span class="field-error">{msg}</span>', 422
+        flash(msg, "danger")
         return redirect(url_for("schedule.available"))
 
-    # Check max holds
-    active_holds = Reservation.query.filter_by(
-        patient_id=current_user.id, status="held"
-    ).count()
-    if active_holds >= MAX_SIMULTANEOUS_HOLDS:
-        flash(f"You can only hold up to {MAX_SIMULTANEOUS_HOLDS} slots at a time.", "warning")
-        return redirect(url_for("schedule.available"))
+    token_hash = _hash_token(raw_token)
 
-    raw_token = request.form.get("request_token")
-    reservation = Reservation(
-        slot_id=slot.id,
+    # Idempotency: if this token was already used by this patient, return the
+    # previous result rather than creating a duplicate reservation.
+    existing = Reservation.query.filter_by(
         patient_id=current_user.id,
-        status="held",
-        held_at=datetime.now(timezone.utc),
-        expires_at=datetime.now(timezone.utc) + HOLD_DURATION,
-        # Store SHA-256 hash of token — raw value never persisted.
-        request_token=_hash_token(raw_token) if raw_token else None,
-    )
-    db.session.add(reservation)
-    # Flush to acquire the write lock and get an ID, but don't commit yet.
-    # SQLite serialises writers, so the recount below sees every concurrent
-    # hold that has already been flushed/committed in another transaction.
-    db.session.flush()
-
-    active_count = Reservation.query.filter(
-        Reservation.slot_id == slot.id,
-        Reservation.status.in_(["held", "confirmed"]),
-    ).count()
-    if active_count > slot.capacity:
-        db.session.rollback()
-        flash("This slot is no longer available.", "warning")
+        request_token=token_hash,
+    ).first()
+    if existing:
+        if existing.status == "held" and not existing.is_expired():
+            return redirect(url_for("schedule.confirm_page", reservation_id=existing.id))
+        if existing.status == "confirmed":
+            flash("This appointment has already been confirmed.", "info")
+            return redirect(url_for("schedule.my_appointments"))
+        # Token consumed by an expired or cancelled hold — reject replay.
+        flash("This request token has already been used. Please refresh to book again.", "warning")
         return redirect(url_for("schedule.available"))
 
-    db.session.commit()
+    with _HOLD_CAPACITY_LOCK:
+        # Roll back any open read-only transaction so the availability query
+        # gets a fresh WAL snapshot that includes reservations committed by
+        # concurrent threads while we waited for the lock.
+        db.session.rollback()
+
+        if not slot.is_available:
+            flash("This slot is no longer available.", "warning")
+            return redirect(url_for("schedule.available"))
+
+        # Check max holds
+        active_holds = Reservation.query.filter_by(
+            patient_id=current_user.id, status="held"
+        ).count()
+        if active_holds >= MAX_SIMULTANEOUS_HOLDS:
+            flash(f"You can only hold up to {MAX_SIMULTANEOUS_HOLDS} slots at a time.", "warning")
+            return redirect(url_for("schedule.available"))
+
+        reservation = Reservation(
+            slot_id=slot.id,
+            patient_id=current_user.id,
+            status="held",
+            held_at=datetime.now(timezone.utc),
+            expires_at=datetime.now(timezone.utc) + HOLD_DURATION,
+            # Store SHA-256 hash — raw token never persisted.
+            request_token=token_hash,
+        )
+        db.session.add(reservation)
+        db.session.flush()
+
+        active_count = Reservation.query.filter(
+            Reservation.slot_id == slot.id,
+            Reservation.status.in_(["held", "confirmed"]),
+        ).count()
+        if active_count > slot.capacity:
+            db.session.rollback()
+            flash("This slot is no longer available.", "warning")
+            return redirect(url_for("schedule.available"))
+
+        db.session.commit()
     return redirect(url_for("schedule.confirm_page", reservation_id=reservation.id))
 
 
@@ -247,7 +289,6 @@ def _get_behalf_schedule_patient(patient_id):
 @antireplay
 def behalf_hold(patient_id, slot_id):
     """Staff places a hold on a slot on behalf of a patient."""
-    import json as _json
     from app.utils.audit import log_action
 
     patient, err = _get_behalf_schedule_patient(patient_id)
@@ -263,51 +304,88 @@ def behalf_hold(patient_id, slot_id):
         flash("Cannot book a slot in the past.", "danger")
         return redirect(url_for("schedule.available"))
 
-    if not slot.is_available:
-        flash("This slot is no longer available.", "warning")
+    # request_token is mandatory — check early so replays are handled before
+    # availability checks (a replayed token must return a deterministic result
+    # even if the slot is now full).
+    raw_token = request.form.get("request_token", "").strip()
+    if not raw_token:
+        msg = "A request token is required to hold a slot."
+        if request.headers.get("HX-Request"):
+            return f'<span class="field-error">{msg}</span>', 422
+        flash(msg, "danger")
         return redirect(url_for("schedule.available"))
 
-    active_holds = Reservation.query.filter_by(
-        patient_id=patient_id, status="held"
-    ).count()
-    if active_holds >= MAX_SIMULTANEOUS_HOLDS:
-        flash(f"Patient already has {MAX_SIMULTANEOUS_HOLDS} active holds.", "warning")
-        return redirect(url_for("schedule.available"))
+    token_hash = _hash_token(raw_token)
 
-    raw_token = request.form.get("request_token")
-    reservation = Reservation(
-        slot_id=slot.id,
+    # Idempotency: if this token was already used for this patient, return the
+    # previous result rather than creating a duplicate reservation.
+    existing = Reservation.query.filter_by(
         patient_id=patient_id,
-        status="held",
-        held_at=datetime.now(timezone.utc),
-        expires_at=datetime.now(timezone.utc) + HOLD_DURATION,
-        request_token=_hash_token(raw_token) if raw_token else None,
-    )
-    db.session.add(reservation)
-    db.session.flush()
-
-    active_count = Reservation.query.filter(
-        Reservation.slot_id == slot.id,
-        Reservation.status.in_(["held", "confirmed"]),
-    ).count()
-    if active_count > slot.capacity:
-        db.session.rollback()
-        flash("This slot is no longer available.", "warning")
+        request_token=token_hash,
+    ).first()
+    if existing:
+        if existing.status == "held" and not existing.is_expired():
+            return redirect(url_for(
+                "schedule.behalf_confirm_page",
+                patient_id=patient_id,
+                reservation_id=existing.id,
+            ))
+        if existing.status == "confirmed":
+            flash("This appointment has already been confirmed.", "info")
+            return redirect(url_for("schedule.available"))
+        # Token consumed by an expired or cancelled hold — reject replay.
+        flash("This request token has already been used. Please try again with a new token.", "warning")
         return redirect(url_for("schedule.available"))
 
-    db.session.commit()
+    with _HOLD_CAPACITY_LOCK:
+        # Roll back any open read-only transaction so the availability query
+        # gets a fresh WAL snapshot (see hold() for full explanation).
+        db.session.rollback()
+
+        if not slot.is_available:
+            flash("This slot is no longer available.", "warning")
+            return redirect(url_for("schedule.available"))
+
+        active_holds = Reservation.query.filter_by(
+            patient_id=patient_id, status="held"
+        ).count()
+        if active_holds >= MAX_SIMULTANEOUS_HOLDS:
+            flash(f"Patient already has {MAX_SIMULTANEOUS_HOLDS} active holds.", "warning")
+            return redirect(url_for("schedule.available"))
+
+        reservation = Reservation(
+            slot_id=slot.id,
+            patient_id=patient_id,
+            status="held",
+            held_at=datetime.now(timezone.utc),
+            expires_at=datetime.now(timezone.utc) + HOLD_DURATION,
+            request_token=token_hash,
+        )
+        db.session.add(reservation)
+        db.session.flush()
+
+        active_count = Reservation.query.filter(
+            Reservation.slot_id == slot.id,
+            Reservation.status.in_(["held", "confirmed"]),
+        ).count()
+        if active_count > slot.capacity:
+            db.session.rollback()
+            flash("This slot is no longer available.", "warning")
+            return redirect(url_for("schedule.available"))
+
+        db.session.commit()
 
     log_action(
         action="on_behalf_hold",
         resource_type="reservation",
         resource_id=reservation.id,
-        details=_json.dumps({
+        details={
             "actor_id": current_user.id,
             "actor_role": current_user.role,
             "patient_id": patient_id,
             "slot_id": slot_id,
             "context": "staff held slot on behalf of patient",
-        }),
+        },
     )
 
     return redirect(url_for("schedule.behalf_confirm_page", patient_id=patient_id, reservation_id=reservation.id))
@@ -351,7 +429,6 @@ def behalf_confirm_page(patient_id, reservation_id):
 @antireplay
 def behalf_confirm(patient_id, reservation_id):
     """Staff confirms (books) the held reservation on behalf of a patient."""
-    import json as _json
     from app.utils.audit import log_action
 
     patient, err = _get_behalf_schedule_patient(patient_id)
@@ -396,13 +473,13 @@ def behalf_confirm(patient_id, reservation_id):
         action="on_behalf_confirm",
         resource_type="reservation",
         resource_id=reservation.id,
-        details=_json.dumps({
+        details={
             "actor_id": current_user.id,
             "actor_role": current_user.role,
             "patient_id": patient_id,
             "slot_id": reservation.slot_id,
             "context": "staff confirmed booking on behalf of patient",
-        }),
+        },
     )
 
     flash("Appointment confirmed!", "success")

@@ -150,7 +150,7 @@ def test_user_switch_reservation_isolation(client, app):
     # User A holds a slot.
     _login(client, "iso_res_a")
     path = f"/schedule/hold/{sid}"
-    client.post(path, data=signed_data("POST", path), follow_redirects=True)
+    client.post(path, data=signed_data("POST", path, {"request_token": "tok-iso-res-a"}), follow_redirects=True)
     _logout(client)
 
     # Confirm User A has a reservation.

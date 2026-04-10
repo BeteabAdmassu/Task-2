@@ -40,6 +40,7 @@
                     <form method="POST" action="{{ _hold_action }}" style="display:inline;">
                         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                         {{ antireplay_inputs("POST", _hold_action) }}
+                        <input type="hidden" name="request_token" value="{{ slot_tokens[s.id] }}">
                         <button type="submit" class="btn btn-primary" style="padding:0.25rem 0.75rem; font-size:0.85rem;">Hold</button>
                     </form>
                 </td>

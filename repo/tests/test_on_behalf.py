@@ -196,8 +196,7 @@ def test_behalf_assessment_audit_log_created(client, app):
     with app.app_context():
         entry = AuditLog.query.filter_by(action="on_behalf_assessment").first()
         assert entry is not None
-        import json
-        details = json.loads(entry.details_json)
+        details = entry.details_json
         assert details["patient_id"] == patient_id
 
 
@@ -278,7 +277,7 @@ def test_front_desk_can_hold_slot_for_patient(client, app):
 
     _login(client, "ob_sched_fd1")
     path = f"/schedule/behalf/{patient_id}/hold/{slot_id}"
-    resp = client.post(path, data=signed_data("POST", path), follow_redirects=False)
+    resp = client.post(path, data=signed_data("POST", path, {"request_token": "tok-behalf-fd1"}), follow_redirects=False)
     # Should redirect to behalf confirm page
     assert resp.status_code == 302
 
@@ -291,7 +290,7 @@ def test_behalf_hold_reservation_owned_by_patient(client, app):
 
     _login(client, "ob_sched_fd2")
     path = f"/schedule/behalf/{patient_id}/hold/{slot_id}"
-    client.post(path, data=signed_data("POST", path), follow_redirects=False)
+    client.post(path, data=signed_data("POST", path, {"request_token": "tok-behalf-own1"}), follow_redirects=False)
 
     with app.app_context():
         res = Reservation.query.filter_by(patient_id=patient_id).first()
@@ -308,13 +307,12 @@ def test_behalf_hold_audit_log_created(client, app):
 
     _login(client, "ob_sched_fd3")
     path = f"/schedule/behalf/{patient_id}/hold/{slot_id}"
-    client.post(path, data=signed_data("POST", path), follow_redirects=False)
+    client.post(path, data=signed_data("POST", path, {"request_token": "tok-behalf-audit1"}), follow_redirects=False)
 
     with app.app_context():
         entry = AuditLog.query.filter_by(action="on_behalf_hold").first()
         assert entry is not None
-        import json
-        details = json.loads(entry.details_json)
+        details = entry.details_json
         assert details["patient_id"] == patient_id
         assert details["slot_id"] == slot_id
 
@@ -329,7 +327,7 @@ def test_behalf_confirm_completes_booking(client, app):
 
     # Hold
     hold_path = f"/schedule/behalf/{patient_id}/hold/{slot_id}"
-    resp = client.post(hold_path, data=signed_data("POST", hold_path), follow_redirects=False)
+    resp = client.post(hold_path, data=signed_data("POST", hold_path, {"request_token": "tok-behalf-confirm1"}), follow_redirects=False)
     assert resp.status_code == 302
     location = resp.headers.get("Location", "")
     assert f"/behalf/{patient_id}/confirm/" in location
@@ -357,7 +355,7 @@ def test_behalf_confirm_audit_log_created(client, app):
     _login(client, "ob_sched_fd5")
 
     hold_path = f"/schedule/behalf/{patient_id}/hold/{slot_id}"
-    resp = client.post(hold_path, data=signed_data("POST", hold_path), follow_redirects=False)
+    resp = client.post(hold_path, data=signed_data("POST", hold_path, {"request_token": "tok-behalf-audit-confirm"}), follow_redirects=False)
     res_id = int(resp.headers["Location"].rstrip("/").split("/")[-1])
 
     confirm_path = f"/schedule/behalf/{patient_id}/confirm/{res_id}"
@@ -366,8 +364,7 @@ def test_behalf_confirm_audit_log_created(client, app):
     with app.app_context():
         entry = AuditLog.query.filter_by(action="on_behalf_confirm").first()
         assert entry is not None
-        import json
-        details = json.loads(entry.details_json)
+        details = entry.details_json
         assert details["patient_id"] == patient_id
 
 
@@ -379,7 +376,7 @@ def test_behalf_confirm_page_get(client, app):
 
     _login(client, "ob_sched_fd6")
     hold_path = f"/schedule/behalf/{patient_id}/hold/{slot_id}"
-    resp = client.post(hold_path, data=signed_data("POST", hold_path), follow_redirects=False)
+    resp = client.post(hold_path, data=signed_data("POST", hold_path, {"request_token": "tok-behalf-page1"}), follow_redirects=False)
     res_id = int(resp.headers["Location"].rstrip("/").split("/")[-1])
 
     resp = client.get(f"/schedule/behalf/{patient_id}/confirm/{res_id}")
@@ -446,7 +443,7 @@ def test_admin_can_behalf_hold_and_confirm(client, app):
 
     _login(client, "ob_sched_admin11")
     hold_path = f"/schedule/behalf/{patient_id}/hold/{slot_id}"
-    resp = client.post(hold_path, data=signed_data("POST", hold_path), follow_redirects=False)
+    resp = client.post(hold_path, data=signed_data("POST", hold_path, {"request_token": "tok-behalf-admin1"}), follow_redirects=False)
     assert resp.status_code == 302
 
     res_id = int(resp.headers["Location"].rstrip("/").split("/")[-1])
@@ -497,7 +494,7 @@ def test_patient_self_booking_unaffected(client, app):
 
     _login(client, "ob_reg_pat")
     path = f"/schedule/hold/{slot_id}"
-    resp = client.post(path, data=signed_data("POST", path), follow_redirects=False)
+    resp = client.post(path, data=signed_data("POST", path, {"request_token": "tok-self-book-reg"}), follow_redirects=False)
     assert resp.status_code == 302
     assert "/confirm/" in resp.headers.get("Location", "")
 

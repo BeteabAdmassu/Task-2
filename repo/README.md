@@ -142,8 +142,8 @@ When a patient submits `POST /patient/delete-account` with a correct password an
 
 | Record | Action |
 |---|---|
-| `users` row | `username` → `deleted_<id>`, `is_active` → `False` |
-| `patient_demographics` | `full_name` → "Deleted User"; `phone` → placeholder "0000000"; `date_of_birth` → epoch placeholder 1900-01-01; all other PII fields cleared |
+| `users` row | `username` -> `deleted_<id>`, `is_active` -> `False` |
+| `patient_demographics` | `full_name` -> "Deleted User"; `phone` -> placeholder "0000000"; `date_of_birth` -> epoch placeholder 1900-01-01; all other PII fields cleared |
 | `demographics_change_log` | `old_value` and `new_value` set to `NULL`; timestamp and field name retained |
 | `clinical_notes` (patient's notes) | `content_encrypted` replaced with encrypted placeholder "[content removed - account deleted]"; record structure (author, timestamp, visit link) retained |
 | `assessment_drafts` | Deleted entirely (incomplete submissions, no legal hold) |
@@ -179,23 +179,23 @@ When a patient submits a health assessment with a `visit_id`, the route verifies
 
 ```
 repo/
-├── app/
-│   ├── __init__.py          # App factory
-│   ├── config.py            # Configuration classes
-│   ├── extensions.py        # Flask extensions
-│   ├── models/              # Database models
-│   ├── routes/              # Blueprint route modules
-│   ├── templates/           # Jinja2 templates
-│   ├── static/              # CSS, JS, images
-│   └── utils/               # Helpers (logging, crypto, etc.)
-├── migrations/              # DB migration scripts
-├── certs/                   # Self-signed certificates (auto-generated)
-├── tests/                   # Unit & integration tests
-│   └── e2e/                 # Playwright E2E tests
-├── run_tests.sh             # Single script to run ALL tests
-├── Dockerfile               # Production container image
-├── docker-compose.yml       # Docker Compose config (E2E test keys -- not for production)
-├── requirements.txt         # Production dependencies
-├── requirements-test.txt    # Test dependencies
-└── run.py                   # Entry point
++-- app/
+|   +-- __init__.py          # App factory
+|   +-- config.py            # Configuration classes
+|   +-- extensions.py        # Flask extensions
+|   +-- models/              # Database models
+|   +-- routes/              # Blueprint route modules
+|   +-- templates/           # Jinja2 templates
+|   +-- static/              # CSS, JS, images
+|   +-- utils/               # Helpers (logging, crypto, etc.)
++-- migrations/              # DB migration scripts
++-- certs/                   # Self-signed certificates (auto-generated)
++-- tests/                   # Unit & integration tests
+|   +-- e2e/                 # Playwright E2E tests
++-- run_tests.sh             # Single script to run ALL tests
++-- Dockerfile               # Production container image
++-- docker-compose.yml       # Docker Compose config (E2E test keys -- not for production)
++-- requirements.txt         # Production dependencies
++-- requirements-test.txt    # Test dependencies
++-- run.py                   # Entry point
 ```
