@@ -1,79 +1,57 @@
-1. Fix Check Verdict
-- Partially Fixed
+# audit_report-2 Fix Check (Static-Only)
 
-2. Scope and Method
-- Source issues checked: `./.tmp/audit_report-2.md` sections `5. Confirmed Blocker / High Findings` and `6. Other Findings Summary` (plus related test-gap notes in section `8`).
-- Verification mode: static-only code/doc/test inspection.
-- Not executed: app runtime, pytest/Playwright execution, Docker, browser workflows.
+1. Verdict
+- Pass (for issues raised in `audit_report-2.md`)
 
-3. Issue-by-Issue Status
+2. Scope and Verification Boundary
+- Reviewed statically: scheduling hold idempotency implementation, related templates, updated tests, and documentation updates.
+- Files reviewed include: `repo/app/routes/schedule.py`, `repo/app/templates/schedule/available.html`, `repo/tests/test_scheduling.py`, `docs/design.md`, `docs/api-spec.md`, plus spot-checks for prior high findings (`auth`, `patient/staff reveal`, `observability sessions`).
+- Not executed: app runtime, tests, Docker, browser/HTMX flows.
+- Runtime behavior remains Manual Verification Required.
 
-Issue F-01
-- Original: `High` — Core scheduling configuration incomplete from in-product application surfaces.
-- Current status: Fixed
-- What changed:
-  - Added admin clinician profile management UI + route handlers.
-  - Added admin schedule template CRUD UI + route handlers.
-  - Added patient/admin navigation wiring for the new admin clinician/schedule setup surfaces.
-  - Added integration tests proving clean-install bootstrap flow (create clinician profile -> create template -> bulk-generate slots) without manual DB seeding.
-- Current evidence:
-  - Routes: `repo/app/routes/admin.py:139`, `repo/app/routes/admin.py:157`, `repo/app/routes/admin.py:211`, `repo/app/routes/admin.py:230`, `repo/app/routes/admin.py:299`
-  - Templates: `repo/app/templates/admin/clinicians.html:7`, `repo/app/templates/admin/clinician_templates.html:11`
-  - Navigation: `repo/app/templates/base.html:47`, `repo/app/templates/base.html:48`
-  - Tests: `repo/tests/test_admin_schedule.py:52`, `repo/tests/test_admin_schedule.py:180`, `repo/tests/test_admin_schedule.py:269`
-- Notes:
-  - Static evidence now shows an end-to-end in-product admin bootstrap path exists.
+3. Prior Findings Status (from `audit_report-2.md`)
 
-Issue F-02
-- Original: `High` — Coverage-zone UI missing required policy-field controls.
-- Current status: Fixed
-- What changed:
-  - Zone create form now includes neighborhoods, distance band min/max, minimum order amount, and delivery fee.
-  - Zone detail/update form now displays and edits the same full policy field set.
-  - Added backend/integration and E2E tests covering create/update/detail round-trip for all required policy fields.
-- Current evidence:
-  - Create UI fields: `repo/app/templates/coverage/zones.html:25`, `repo/app/templates/coverage/zones.html:29`, `repo/app/templates/coverage/zones.html:33`, `repo/app/templates/coverage/zones.html:37`, `repo/app/templates/coverage/zones.html:41`
-  - Detail/update UI fields: `repo/app/templates/coverage/zone_detail.html:8`, `repo/app/templates/coverage/zone_detail.html:39`, `repo/app/templates/coverage/zone_detail.html:44`, `repo/app/templates/coverage/zone_detail.html:49`, `repo/app/templates/coverage/zone_detail.html:54`
-  - Tests (integration): `repo/tests/test_coverage.py:708`, `repo/tests/test_coverage.py:738`, `repo/tests/test_coverage.py:783`
-  - Tests (E2E): `repo/tests/e2e/test_zones.py:28`, `repo/tests/e2e/test_zones.py:48`
-- Notes:
-  - Prior test-critical gap for zone-policy UI completeness is now statically addressed by added E2E coverage.
+## H-01 (High): request-token idempotency not enforced on scheduling holds
+- Status: Fixed
+- Evidence:
+  - Token required in patient hold route: `repo/app/routes/schedule.py:108`
+  - Missing token rejected with explicit handling: `repo/app/routes/schedule.py:109`
+  - Replay handling returns deterministic prior outcome: `repo/app/routes/schedule.py:120`
+  - Same enforcement on staff on-behalf hold: `repo/app/routes/schedule.py:310`, `repo/app/routes/schedule.py:322`
+  - Hold form now includes token: `repo/app/templates/schedule/available.html:43`
+  - Token-at-rest remains hashed (SHA-256): `repo/app/routes/schedule.py:116`, `repo/app/routes/schedule.py:159`
+  - Coverage added for missing token + replay (patient and behalf): `repo/tests/test_scheduling.py:791`, `repo/tests/test_scheduling.py:828`, `repo/tests/test_scheduling.py:863`, `repo/tests/test_scheduling.py:884`
 
-Issue M-02
-- Original: `Medium` — Architecture docs stale/misaligned with scheduler behavior.
-- Current status: Fixed
-- What changed:
-  - Design doc scheduler section now states hold expiry every 1 minute and reminder generation every 15 minutes.
-  - This aligns with the scheduler jobs actually registered in app factory.
-- Current evidence:
-  - Docs: `docs/design.md:53`, `docs/design.md:54`, `docs/design.md:55`
-  - Implementation: `repo/app/__init__.py:59`, `repo/app/__init__.py:60`
+## M-01 (Medium): architecture documentation drift
+- Status: Fixed
+- Evidence:
+  - Session model now documented as Flask-Login cookie-based (no sessions table): `docs/design.md:70`, `docs/design.md:167`
+  - Schema naming aligned to implemented models (`audit_logs`, `signed_requests`, reservation request token notes): `docs/design.md:147`, `docs/design.md:262`, `docs/design.md:384`, `docs/design.md:412`
 
-Issue M-Nav
-- Original: `Medium` — Patient primary navigation omitted key patient core flows.
-- Current status: Fixed
-- What changed:
-  - Patient nav now includes direct links for Assessments, Book Appointment, and My Appointments.
-- Current evidence:
-  - `repo/app/templates/base.html:35`, `repo/app/templates/base.html:36`, `repo/app/templates/base.html:37`
+## M-02 (Medium): audit details typing inconsistency
+- Status: Fixed
+- Evidence:
+  - `log_action` call sites pass structured dicts (no pre-serialized JSON strings): `repo/app/routes/admin.py:69`, `repo/app/routes/schedule.py:382`, `repo/app/routes/assessments.py:440`
 
-Issue L-ENC
-- Original: `Low` — Encoding artifacts (mojibake) remained in docs/templates.
-- Current status: Partially Fixed
-- What changed:
-  - Some previously affected template text appears normalized (example home title is clean ASCII punctuation).
-- Remaining evidence:
-  - `docs/design.md:10` (diagram mojibake)
-  - `repo/README.md:145` (arrow mojibake in anonymization table)
-  - `repo/README.md:182` (project tree mojibake)
-- Minimum remaining fix:
-  - Normalize affected docs to UTF-8 and replace mojibake sequences with intended ASCII/Unicode glyphs.
+## M-03 / L-01 (Docs clarity on response modes)
+- Status: Fixed / Improved
+- Evidence:
+  - API spec now explicitly documents mixed response modes and HTMX-conditional behavior: `docs/api-spec.md:3`, `docs/api-spec.md:12`
+  - Scheduling hold token requirement and replay semantics documented: `docs/api-spec.md:109`, `docs/api-spec.md:113`
 
-4. Summary
-- Total checked issues: 5
-- Fixed: 4
-- Partially Fixed: 1
-- Unfixed: 0
+4. Regression Spot-Checks for Earlier Audit Findings
+- Login anti-replay wiring present and tested:
+  - Route guard: `repo/app/routes/auth.py:158`
+  - Login form anti-replay regression test: `repo/tests/test_auth.py:286`
+- Stored-XSS reveal risk path remains escaped:
+  - Patient reveal escape: `repo/app/routes/patient.py:201`
+  - Staff reveal escape: `repo/app/routes/staff.py:89`
+- Admin operations sessions endpoint now aligned with model field:
+  - Uses `User.last_login_at`: `repo/app/routes/observability.py:74`
+  - Field exists in model: `repo/app/models/user.py:17`
+  - Endpoint test present: `repo/tests/test_observability.py:94`
 
-5. Recommended Next Step
-1. Resolve remaining encoding artifacts in `docs/design.md` and `repo/README.md`, then keep encoding regression checks in CI.
+5. Final Conclusion
+- All issues identified in `audit_report-2.md` are resolved by static evidence.
+- No new Blocker/High issue was identified in this targeted fix-check scope.
+- Manual verification still recommended for runtime UX details (HTMX error rendering, redirect behavior, and concurrency under real deployment conditions).
