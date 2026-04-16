@@ -30,3 +30,5 @@ playwright/.cache/
 **/*.pem
 **/*.key
 **/*.crt
+
+.coverage

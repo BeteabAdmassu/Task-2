@@ -68,6 +68,6 @@ def idempotent(f):
         result = f(*args, **kwargs)
         if token:
             user_id = current_user.id if current_user.is_authenticated else None
-            save_idempotency(token, request.path, user_id=user_id)
+            save_idempotency(token, request.path, result={"processed": True}, user_id=user_id)
         return result
     return decorated

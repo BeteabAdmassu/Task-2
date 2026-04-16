@@ -23,6 +23,12 @@ with app.app_context():
         admin.set_password("Admin123")
         db.session.add(admin)
 
+    # Create patient user
+    if not User.query.filter_by(username="patient").first():
+        patient = User(username="patient", role="patient")
+        patient.set_password("Patient1")
+        db.session.add(patient)
+
     # Create front desk user
     if not User.query.filter_by(username="frontdesk").first():
         fd = User(username="frontdesk", role="front_desk")

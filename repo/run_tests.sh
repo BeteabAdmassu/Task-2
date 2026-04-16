@@ -6,7 +6,7 @@ cd "$SCRIPT_DIR"
 
 echo "=== MeridianCare Test Suite ==="
 
-RUN_E2E="${RUN_E2E:-0}"
+RUN_E2E="${RUN_E2E:-1}"
 
 # ── Step 1: Check Docker availability ──
 echo ""
@@ -49,7 +49,8 @@ fi
 echo ""
 echo "--- Running unit/integration tests ---"
 docker compose --profile test run --rm test-runner \
-    python -m pytest tests/ -v --ignore=tests/e2e/ --tb=short
+    python -m pytest tests/ -v --ignore=tests/e2e/ --tb=short \
+    --cov=app --cov-report=term-missing --cov-fail-under=90
 UNIT_EXIT=$?
 
 if [ "$UNIT_EXIT" -ne 0 ]; then
@@ -60,8 +61,8 @@ echo "--- Unit/integration tests passed ---"
 
 if [ "$RUN_E2E" != "1" ]; then
     echo ""
-    echo "=== Unit/integration tests passed (E2E temporarily disabled) ==="
-    echo "Set RUN_E2E=1 to run E2E tests."
+    echo "=== Unit/integration tests passed (E2E skipped) ==="
+    echo "Set RUN_E2E=0 to skip E2E tests."
     exit 0
 fi
 

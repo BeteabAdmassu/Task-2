@@ -1,10 +1,16 @@
 import hmac
 import hashlib
+import threading
 from datetime import datetime, timezone, timedelta
 from flask import request, current_app, jsonify
 from functools import wraps
 from app.extensions import db
 from app.models.audit import SignedRequest
+
+# Serialize the nonce check+insert so concurrent threads running on the same
+# process (e.g. Werkzeug threaded=True + SQLite NullPool) never race on the
+# unique constraint or trigger SQLITE_MISUSE from simultaneous DDL writes.
+_NONCE_LOCK = threading.Lock()
 
 
 def _hash_nonce(nonce: str) -> str:
@@ -66,13 +72,16 @@ def antireplay(f):
 
         # Replay check — nonce must not have been seen before.
         # Store and compare the SHA-256 hash so raw nonces never reach the DB.
+        # The lock prevents concurrent threads from racing on the check+insert
+        # (TOCTOU) and from triggering SQLITE_MISUSE on concurrent WAL writes.
         nonce_hash = _hash_nonce(nonce)
-        existing = SignedRequest.query.filter_by(nonce=nonce_hash).first()
-        if existing:
-            return jsonify({"error": "Request already processed"}), 409
+        with _NONCE_LOCK:
+            existing = SignedRequest.query.filter_by(nonce=nonce_hash).first()
+            if existing:
+                return jsonify({"error": "Request already processed"}), 409
 
-        sr = SignedRequest(nonce=nonce_hash, timestamp=ts, expires_at=ts + REPLAY_WINDOW)
-        db.session.add(sr)
-        db.session.commit()
+            sr = SignedRequest(nonce=nonce_hash, timestamp=ts, expires_at=ts + REPLAY_WINDOW)
+            db.session.add(sr)
+            db.session.commit()
         return f(*args, **kwargs)
     return decorated

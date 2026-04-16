@@ -82,6 +82,17 @@
     </footer>
 
     {% block extra_scripts %}{% endblock %}
+    <script>
+    document.body.addEventListener("htmx:beforeSwap", function(evt) {
+        // Allow HTMX to swap error responses so inline validation and
+        // rate-limit messages render in the target element.
+        var code = evt.detail.xhr.status;
+        if (code === 422 || code === 429 || code === 400) {
+            evt.detail.shouldSwap = true;
+            evt.detail.isError = false;
+        }
+    });
+    </script>
     <!-- Anti-replay fields (_nonce, _timestamp, _signature) are rendered
          server-side per form using the antireplay_inputs() helper so the
          HMAC signing secret never leaves the server. -->

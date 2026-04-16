@@ -1,7 +1,7 @@
 import threading
 import uuid
 from datetime import datetime, timezone, timedelta, date, time
-from flask import Blueprint, render_template, request, redirect, url_for, flash, jsonify
+from flask import Blueprint, render_template, request, redirect, url_for, flash, jsonify, make_response
 from flask_login import login_required, current_user
 from app.extensions import db
 from app.models.scheduling import (
@@ -13,6 +13,15 @@ from app.utils.antireplay import antireplay
 from app.utils.idempotency import hash_token as _hash_token
 
 schedule_bp = Blueprint("schedule", __name__, url_prefix="/schedule")
+
+
+def _htmx_or_redirect(url):
+    """Return HX-Redirect for HTMX callers, plain 302 otherwise."""
+    if request.headers.get("HX-Request"):
+        resp = make_response("", 200)
+        resp.headers["HX-Redirect"] = url
+        return resp
+    return redirect(url)
 
 HOLD_DURATION = timedelta(minutes=10)
 MAX_SIMULTANEOUS_HOLDS = 2
@@ -96,11 +105,11 @@ def hold(slot_id):
     slot = db.session.get(Slot, slot_id)
     if not slot:
         flash("Slot not found.", "danger")
-        return redirect(url_for("schedule.available"))
+        return _htmx_or_redirect(url_for("schedule.available"))
 
     if slot.date < date.today():
         flash("Cannot book a slot in the past.", "danger")
-        return redirect(url_for("schedule.available"))
+        return _htmx_or_redirect(url_for("schedule.available"))
 
     # request_token is mandatory — check early so replays are handled before
     # availability checks (a replayed token must return a deterministic result
@@ -123,13 +132,13 @@ def hold(slot_id):
     ).first()
     if existing:
         if existing.status == "held" and not existing.is_expired():
-            return redirect(url_for("schedule.confirm_page", reservation_id=existing.id))
+            return _htmx_or_redirect(url_for("schedule.confirm_page", reservation_id=existing.id))
         if existing.status == "confirmed":
             flash("This appointment has already been confirmed.", "info")
-            return redirect(url_for("schedule.my_appointments"))
+            return _htmx_or_redirect(url_for("schedule.my_appointments"))
         # Token consumed by an expired or cancelled hold — reject replay.
         flash("This request token has already been used. Please refresh to book again.", "warning")
-        return redirect(url_for("schedule.available"))
+        return _htmx_or_redirect(url_for("schedule.available"))
 
     with _HOLD_CAPACITY_LOCK:
         # Roll back any open read-only transaction so the availability query
@@ -139,7 +148,7 @@ def hold(slot_id):
 
         if not slot.is_available:
             flash("This slot is no longer available.", "warning")
-            return redirect(url_for("schedule.available"))
+            return _htmx_or_redirect(url_for("schedule.available"))
 
         # Check max holds
         active_holds = Reservation.query.filter_by(
@@ -147,7 +156,7 @@ def hold(slot_id):
         ).count()
         if active_holds >= MAX_SIMULTANEOUS_HOLDS:
             flash(f"You can only hold up to {MAX_SIMULTANEOUS_HOLDS} slots at a time.", "warning")
-            return redirect(url_for("schedule.available"))
+            return _htmx_or_redirect(url_for("schedule.available"))
 
         reservation = Reservation(
             slot_id=slot.id,
@@ -168,10 +177,10 @@ def hold(slot_id):
         if active_count > slot.capacity:
             db.session.rollback()
             flash("This slot is no longer available.", "warning")
-            return redirect(url_for("schedule.available"))
+            return _htmx_or_redirect(url_for("schedule.available"))
 
         db.session.commit()
-    return redirect(url_for("schedule.confirm_page", reservation_id=reservation.id))
+    return _htmx_or_redirect(url_for("schedule.confirm_page", reservation_id=reservation.id))
 
 
 @schedule_bp.route("/confirm/<int:reservation_id>", methods=["GET"])
@@ -208,17 +217,17 @@ def confirm(reservation_id):
     reservation = db.session.get(Reservation, reservation_id)
     if not reservation or reservation.patient_id != current_user.id:
         flash("Reservation not found.", "danger")
-        return redirect(url_for("schedule.available"))
+        return _htmx_or_redirect(url_for("schedule.available"))
 
     if reservation.is_expired():
         reservation.status = "expired"
         db.session.commit()
         flash("Your reservation hold has expired.", "warning")
-        return redirect(url_for("schedule.available"))
+        return _htmx_or_redirect(url_for("schedule.available"))
 
     if reservation.status == "confirmed":
         flash("This reservation is already confirmed.", "info")
-        return redirect(url_for("schedule.my_appointments"))
+        return _htmx_or_redirect(url_for("schedule.my_appointments"))
 
     reservation.status = "confirmed"
     reservation.confirmed_at = datetime.now(timezone.utc)
@@ -243,7 +252,7 @@ def confirm(reservation_id):
     db.session.commit()
 
     flash("Appointment confirmed!", "success")
-    return redirect(url_for("schedule.my_appointments"))
+    return _htmx_or_redirect(url_for("schedule.my_appointments"))
 
 
 @schedule_bp.route("/cancel/<int:reservation_id>", methods=["POST"])
@@ -253,11 +262,11 @@ def cancel(reservation_id):
     reservation = db.session.get(Reservation, reservation_id)
     if not reservation:
         flash("Reservation not found.", "danger")
-        return redirect(url_for("schedule.my_appointments"))
+        return _htmx_or_redirect(url_for("schedule.my_appointments"))
 
     if reservation.patient_id != current_user.id:
         flash("Access denied.", "danger")
-        return redirect(url_for("schedule.my_appointments"))
+        return _htmx_or_redirect(url_for("schedule.my_appointments"))
 
     if reservation.status == "confirmed":
         reservation.slot.booked_count = max(0, reservation.slot.booked_count - 1)
@@ -265,7 +274,7 @@ def cancel(reservation_id):
     db.session.commit()
 
     flash("Reservation canceled.", "info")
-    return redirect(url_for("schedule.my_appointments"))
+    return _htmx_or_redirect(url_for("schedule.my_appointments"))
 
 
 # ── On-behalf scheduling routes (administrator / front_desk only) ──

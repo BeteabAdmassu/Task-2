@@ -1,6 +1,7 @@
 services:
   web:
     build: .
+    container_name: TASK-2
     ports:
       - "5000:5000"
     environment:
@@ -9,8 +10,11 @@ services:
       - SECRET_KEY=b039d3574095c381535b22b0fce2796d62bee559f0119b6ae0f4b2e1f006fbc1
       - ENCRYPTION_KEY=vs-s6IEaOMySzeREClj2EiigsBb5IAL8si0R1ZKoh4Q=
       - REQUEST_SIGNING_SECRET=ec6a47cc8545e3a0801b22031039feec5414af91e09ba59f33a5a42ad5e0f4db
+      - DATABASE_URL=sqlite:////app/data/meridiancare.db
     tmpfs:
       - /app/data
+    volumes:
+      - .:/app
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request, ssl; ctx = ssl.create_default_context(); ctx.check_hostname = False; ctx.verify_mode = ssl.CERT_NONE; urllib.request.urlopen('https://localhost:5000/health', context=ctx)"]
       interval: 5s
@@ -24,9 +28,11 @@ services:
       dockerfile: Dockerfile.test
     environment:
       - FLASK_ENV=testing
+      - PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1
     tmpfs:
       - /app/data
     volumes:
+      - .:/app
       - ../docs:/docs:ro
     network_mode: host
     profiles:

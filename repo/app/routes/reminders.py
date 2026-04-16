@@ -1,5 +1,5 @@
 from datetime import datetime, timezone
-from flask import Blueprint, render_template, flash, redirect, url_for, request
+from flask import Blueprint, render_template, flash, redirect, url_for, request, make_response
 from flask_login import current_user, login_required
 from app.extensions import db
 from app.models.reminder import Reminder, ReminderConfig
@@ -28,18 +28,25 @@ def my_reminders():
 @login_required
 @antireplay
 def dismiss(reminder_id):
+    def _htmx_or_redirect(url):
+        if request.headers.get("HX-Request"):
+            resp = make_response("", 200)
+            resp.headers["HX-Redirect"] = url
+            return resp
+        return redirect(url)
+
     reminder = db.session.get(Reminder, reminder_id)
     if not reminder:
         flash("Reminder not found.", "danger")
-        return redirect(url_for("reminders.my_reminders"))
+        return _htmx_or_redirect(url_for("reminders.my_reminders"))
     if reminder.patient_id != current_user.id and current_user.role != "administrator":
         flash("Access denied.", "danger")
-        return redirect(url_for("reminders.my_reminders"))
+        return _htmx_or_redirect(url_for("reminders.my_reminders"))
     reminder.status = "dismissed"
     reminder.dismissed_at = datetime.now(timezone.utc)
     db.session.commit()
     flash("Reminder dismissed.", "success")
-    return redirect(url_for("reminders.my_reminders"))
+    return _htmx_or_redirect(url_for("reminders.my_reminders"))
 
 
 @reminders_bp.route("/admin")
