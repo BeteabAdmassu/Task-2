@@ -8,27 +8,30 @@ echo "=== MeridianCare Test Suite ==="
 
 RUN_E2E="${RUN_E2E:-1}"
 
-# ── Health check ──
+# ── Ensure app is running ──
+# CI environments may stop the web container between build and test phases.
+# `docker compose up -d` is idempotent: no-op if already running, restarts if
+# stopped, and never rebuilds (the image was built by the CI).
 echo ""
-echo "--- Waiting for app to become healthy ---"
-HEALTHY=false
+echo "--- Ensuring app is running ---"
+docker compose up -d web
+echo "Waiting for healthy status..."
 for i in $(seq 1 60); do
     CONTAINER_ID=$(docker compose ps -q web 2>/dev/null || true)
     if [ -n "$CONTAINER_ID" ]; then
         STATUS=$(docker inspect --format='{{.State.Health.Status}}' "$CONTAINER_ID" 2>/dev/null || echo "starting")
         if [ "$STATUS" = "healthy" ]; then
-            HEALTHY=true
             echo "App is healthy."
             break
         fi
     fi
+    if [ "$i" -eq 60 ]; then
+        echo "ERROR: App did not become healthy within 120 seconds."
+        docker compose logs web 2>/dev/null || true
+        exit 1
+    fi
     sleep 2
 done
-if [ "$HEALTHY" != "true" ]; then
-    echo "ERROR: App did not become healthy within 120 seconds."
-    docker compose logs web 2>/dev/null || true
-    exit 1
-fi
 
 # ── Step 1: Run unit/integration tests inside test-runner container ──
 echo ""
